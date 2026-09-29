@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -15,6 +15,14 @@ import { getSource, officialUrl, officialUrlForSourceName, SOURCES } from "../sc
 import { collectSource } from "../scripts/collector-registry.mjs";
 import { refreshSourceStatus } from "../scripts/source-status.mjs";
 import { createDedupeKey } from "../scripts/dedupe.mjs";
+
+async function buaaFixture(name) {
+  return JSON.parse(await readFile(new URL(`./fixtures/buaa/${name}.json`, import.meta.url), "utf8"));
+}
+
+function jsonResponse(payload) {
+  return { ok: true, json: async () => structuredClone(payload) };
+}
 
 test("高校来源配置集中管理", () => {
   assert.equal(getSource("buaa").name, "北京航空航天大学");
@@ -53,34 +61,30 @@ test("采集器接口按来源调度并校验结果", async () => {
 test("采集去重、审核状态保留、失败不丢数据", async () => {
   const dir = await mkdtemp(join(tmpdir(), "campus-jobs-"));
   const path = join(dir, "test.db");
-  let current = "a";
-  const fakeFetch = async (url) => ({
-    ok: true,
-    json: async () => url.includes("getToken")
-      ? { data: "test-token" }
-      : { state: 1, object: { totalPage: 1, list: [{
-        id: current, title: "测试招聘", corporationName: "测试公司",
-        detailsUrl: "//f/recruitmentinfo/show?recruitmentId=" + current,
-      }] } },
-  });
+  const token = await buaaFixture("token");
+  const pages = { "1": await buaaFixture("page-1"), "2": await buaaFixture("page-2") };
+  const fakeFetch = async (url, options) => url.includes("getToken")
+    ? jsonResponse(token)
+    : jsonResponse(pages[options.body.get("pageNo")]);
   try {
     const options = { dbPath: path, fetchImpl: fakeFetch, skipSnapshot: true, wait: async () => {} };
-    assert.equal((await collectBuaa(options)).newCount, 1);
+    const firstRun = await collectBuaa(options);
+    assert.equal(firstRun.count, 2);
+    assert.equal(firstRun.newCount, 2);
     const db = await openDatabase(path);
     const firstSuccess = db.prepare("SELECT last_status AS status, last_success_at AS successAt, fetched_count AS fetchedCount FROM source_status WHERE source=?").get("北京航空航天大学");
     assert.equal(firstSuccess.status, "success");
-    assert.equal(firstSuccess.fetchedCount, 1);
-    db.prepare("UPDATE jobs SET review_status='approved' WHERE source_id='a'").run();
+    assert.equal(firstSuccess.fetchedCount, 2);
+    db.prepare("UPDATE jobs SET review_status='approved' WHERE source_id='fixture-a'").run();
     closeDatabase(db);
     assert.equal((await collectBuaa(options)).newCount, 0);
-    current = "b";
-    assert.equal((await collectBuaa(options)).newCount, 1);
     await assert.rejects(collectBuaa({ ...options, fetchImpl: async () => { throw new Error("network down"); } }), /network down/);
     const result = await openDatabase(path);
     assert.equal(result.prepare("SELECT COUNT(*) AS n FROM jobs").get().n, 2);
-    assert.equal(result.prepare("SELECT review_status FROM jobs WHERE source_id='a'").get().review_status, "approved");
+    assert.equal(result.prepare("SELECT review_status FROM jobs WHERE source_id='fixture-a'").get().review_status, "approved");
     assert.equal(result.prepare("SELECT status FROM source_runs ORDER BY id DESC LIMIT 1").get().status, "failed");
-    assert.equal(result.prepare("SELECT detail_url FROM jobs WHERE source_id='a'").get().detail_url, "https://career.buaa.edu.cn/f/recruitmentinfo/show?recruitmentId=a");
+    assert.equal(result.prepare("SELECT detail_url FROM jobs WHERE source_id='fixture-a'").get().detail_url, "https://career.buaa.edu.cn/f/recruitmentinfo/show?recruitmentId=fixture-a");
+    assert.equal(result.prepare("SELECT COUNT(*) AS n FROM jobs WHERE dedupe_key<>''").get().n, 2);
     const failedState = result.prepare("SELECT last_status AS status, last_success_at AS successAt, last_failure_at AS failureAt, last_error AS error FROM source_status WHERE source=?").get("北京航空航天大学");
     assert.equal(failedState.status, "failed");
     assert.ok(failedState.successAt >= firstSuccess.successAt);
@@ -117,7 +121,7 @@ test("旧数据库的高校运行记录补入来源状态表", async () => {
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test("超时重试与非重试 HTTP 错误", async () => {
+test("超时重试、非重试 HTTP 错误和恶意链接夹具", async () => {
   let calls = 0;
   const result = await requestJson("https://career.buaa.edu.cn/test", {}, {
     fetchImpl: async () => { calls++; if (calls < 3) throw new Error("temporary"); return { ok: true, json: async () => ({ ok: true }) }; },
@@ -128,26 +132,29 @@ test("超时重试与非重试 HTTP 错误", async () => {
   calls = 0;
   await assert.rejects(requestJson("https://career.buaa.edu.cn/test", {}, { fetchImpl: async () => { calls++; return { ok: false, status: 403 }; }, wait: async () => {} }), /403/);
   assert.equal(calls, 1);
-  assert.throws(() => normalizeItem({ id: "a", title: "x", detailsUrl: "https://evil.example/redirect" }, new Date().toISOString()), /不合法/);
+  const malicious = await buaaFixture("malicious-link");
+  assert.throws(() => normalizeItem(malicious.object.list[0], new Date().toISOString()), /不合法/);
 });
 
 test("空列表和分页中途失败不写入半成品", async () => {
   const dir = await mkdtemp(join(tmpdir(), "campus-jobs-partial-"));
   const path = join(dir, "test.db");
-  const tokenResponse = { ok: true, json: async () => ({ data: "test-token" }) };
+  const tokenResponse = jsonResponse(await buaaFixture("token"));
+  const firstPage = await buaaFixture("page-1");
+  const emptyPage = await buaaFixture("empty-page");
   try {
     await assert.rejects(collectBuaa({
       dbPath: path, skipSnapshot: true, wait: async () => {},
       fetchImpl: async (url, options) => {
         if (url.includes("getToken")) return tokenResponse;
         const page = options.body.get("pageNo");
-        if (page === "1") return { ok: true, json: async () => ({ state: 1, object: { totalPage: 2, list: [{ id: "a", title: "第一页记录" }] } }) };
+        if (page === "1") return jsonResponse(firstPage);
         throw new Error("second page failed");
       },
     }), /second page failed/);
     await assert.rejects(collectBuaa({
       dbPath: path, skipSnapshot: true, wait: async () => {},
-      fetchImpl: async (url) => url.includes("getToken") ? tokenResponse : ({ ok: true, json: async () => ({ state: 1, object: { totalPage: 1, list: [] } }) }),
+      fetchImpl: async (url) => url.includes("getToken") ? tokenResponse : jsonResponse(emptyPage),
     }), /空列表/);
     const db = await openDatabase(path);
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM jobs").get().count, 0);

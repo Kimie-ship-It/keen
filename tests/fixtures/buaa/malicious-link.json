@@ -1,0 +1,14 @@
+{
+  "state": 1,
+  "object": {
+    "totalPage": 1,
+    "list": [
+      {
+        "id": "fixture-evil",
+        "title": "伪装链接样本",
+        "corporationName": "未知公司",
+        "detailsUrl": "https://career.buaa.edu.cn.evil.example/f/recruitmentinfo/show?recruitmentId=fixture-evil"
+      }
+    ]
+  }
+}

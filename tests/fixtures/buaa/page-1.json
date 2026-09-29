@@ -1,0 +1,18 @@
+{
+  "state": 1,
+  "object": {
+    "totalPage": 2,
+    "list": [
+      {
+        "id": "fixture-a",
+        "title": "示例科技2027届校园招聘",
+        "corporationName": "示例科技有限公司",
+        "positionType": "全职",
+        "startTime": "2026-09-29 09:00:00",
+        "endTime": "2026-10-31",
+        "recruitingNumbers": 20,
+        "detailsUrl": "//f/recruitmentinfo/show?recruitmentId=fixture-a"
+      }
+    ]
+  }
+}

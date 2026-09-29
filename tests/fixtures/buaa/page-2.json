@@ -1,0 +1,18 @@
+{
+  "state": 1,
+  "object": {
+    "totalPage": 2,
+    "list": [
+      {
+        "id": "fixture-b",
+        "title": "示例研究院秋季招聘",
+        "corporationName": "示例研究院",
+        "positionType": "全职",
+        "startTime": "2026-09-28 10:00:00",
+        "endTime": "2026-11-15",
+        "recruitingNumbers": 8,
+        "detailsUrl": "/f/recruitmentinfo/show?recruitmentId=fixture-b"
+      }
+    ]
+  }
+}
