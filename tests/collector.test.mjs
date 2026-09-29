@@ -138,6 +138,14 @@ test("管理授权和审核状态持久化", async () => {
     assert.equal(updateReview(db, { source: "测试大学", sourceId: "1", status: "approved" }), 1);
     assert.equal(listPendingReviews(db).pendingCount, 100);
     assert.equal(db.prepare("SELECT review_status FROM jobs WHERE source_id='1'").get().review_status, "approved");
+    assert.equal(updateReview(db, { source: "测试大学", sourceId: "1", status: "hidden" }), 1);
+    assert.equal(updateReview(db, { source: "测试大学", sourceId: "missing", status: "hidden" }), 0);
+    const events = listPendingReviews(db).recentReviews;
+    assert.equal(events.length, 2);
+    assert.deepEqual(events.map(({ oldStatus, newStatus }) => [oldStatus, newStatus]), [["approved", "hidden"], ["pending", "approved"]]);
+    assert.equal(events[0].actor, "admin");
+    assert.ok(!JSON.stringify(events).includes(token));
+    assert.ok(Number.isFinite(Date.parse(events[0].createdAt)));
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 

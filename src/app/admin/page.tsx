@@ -6,11 +6,14 @@ import { Check, EyeOff, RefreshCw } from "lucide-react";
 import styles from "../page.module.css";
 
 type Job = { source: string; sourceId: string; company: string; title: string; reviewStatus: string };
+type ReviewEvent = { source: string; sourceId: string; oldStatus: string; newStatus: string; actor: string; createdAt: string };
+const statusLabel: Record<string, string> = { pending: "待核验", approved: "核验通过", hidden: "隐藏" };
 
 export default function AdminPage() {
   const [token, setToken] = useState("");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [counts, setCounts] = useState<Array<{ status: string; count: number }>>([]);
+  const [recentReviews, setRecentReviews] = useState<ReviewEvent[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -32,6 +35,7 @@ export default function AdminPage() {
       const data = await request("GET", undefined, `?limit=100&offset=${offset}`);
       setJobs((current) => append ? [...current, ...data.jobs] : data.jobs);
       setCounts(data.counts);
+      setRecentReviews(data.recentReviews);
       setHasMore(data.hasMore);
       setError("");
     }
@@ -51,5 +55,7 @@ export default function AdminPage() {
     {error && <p role="alert" className={styles.empty}>{error}</p>}
     <div className={styles.sectionHead}><h2>待审核招聘</h2><span>{counts.map((item) => `${item.status}: ${item.count}`).join(" · ")}</span></div>
     <div className={styles.tableCard}><table><thead><tr><th>公司</th><th>招聘公告</th><th>来源</th><th>操作</th></tr></thead><tbody>{jobs.map((job) => <tr key={`${job.source}:${job.sourceId}`}><td>{job.company}</td><td>{job.title}</td><td>{job.source}</td><td><div className={styles.reviewActions}><button disabled={busy} className={styles.outlineButton} onClick={() => void review(job, "approved")}><Check size={15} /> 核验通过</button><button disabled={busy} className={styles.outlineButton} onClick={() => void review(job, "hidden")}><EyeOff size={15} /> 隐藏</button></div></td></tr>)}</tbody></table>{hasMore && <button className={styles.outlineButton} onClick={() => void load(jobs.length, true)} disabled={busy}><RefreshCw size={15} /> 加载更多</button>}</div>
+    <div className={styles.sectionHead}><h2>最近审核记录</h2></div>
+    <div className={styles.tableCard}><table><thead><tr><th>时间</th><th>来源</th><th>公告编号</th><th>状态变更</th><th>操作者</th></tr></thead><tbody>{recentReviews.map((event, index) => <tr key={`${event.createdAt}:${event.source}:${event.sourceId}:${index}`}><td>{new Date(event.createdAt).toLocaleString("zh-CN")}</td><td>{event.source}</td><td>{event.sourceId}</td><td>{statusLabel[event.oldStatus] || event.oldStatus} → {statusLabel[event.newStatus] || event.newStatus}</td><td>管理员</td></tr>)}</tbody></table></div>
   </main></div>;
 }

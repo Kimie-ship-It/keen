@@ -16,7 +16,8 @@ export function listPendingReviews(db, { limit = 100, offset = 0 } = {}) {
   const jobs = db.prepare("SELECT source, source_id AS sourceId, company, title, review_status AS reviewStatus FROM jobs WHERE review_status='pending' ORDER BY first_seen_at DESC, id DESC LIMIT ? OFFSET ?").all(limit, offset);
   const pendingCount = db.prepare("SELECT COUNT(*) AS total FROM jobs WHERE review_status='pending'").get().total;
   const counts = db.prepare("SELECT review_status AS status, COUNT(*) AS count FROM jobs GROUP BY review_status ORDER BY review_status").all();
-  return { jobs, counts, pendingCount, limit, offset, hasMore: offset + jobs.length < pendingCount };
+  const recentReviews = db.prepare("SELECT source, source_id AS sourceId, old_status AS oldStatus, new_status AS newStatus, actor, created_at AS createdAt FROM review_events ORDER BY id DESC LIMIT 20").all();
+  return { jobs, counts, pendingCount, limit, offset, hasMore: offset + jobs.length < pendingCount, recentReviews };
 }
 
 export function validateReviewInput(input) {
@@ -28,5 +29,12 @@ export function validateReviewInput(input) {
 
 export function updateReview(db, input) {
   const { source, sourceId, status } = validateReviewInput(input);
-  return db.prepare("UPDATE jobs SET review_status=? WHERE source=? AND source_id=?").run(status, source, sourceId).changes;
+  return db.transaction(() => {
+    const current = db.prepare("SELECT review_status AS status FROM jobs WHERE source=? AND source_id=?").get(source, sourceId);
+    if (!current) return 0;
+    db.prepare("UPDATE jobs SET review_status=? WHERE source=? AND source_id=?").run(status, source, sourceId);
+    db.prepare("INSERT INTO review_events (source, source_id, old_status, new_status, actor, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(source, sourceId, current.status, status, "admin", new Date().toISOString());
+    return 1;
+  })();
 }
