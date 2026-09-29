@@ -1,4 +1,4 @@
-import { getSource } from "./sources.mjs";
+import { getSource, officialUrl } from "./sources.mjs";
 
 const buaa = getSource("buaa");
 export const SOURCE = buaa.name;
@@ -32,15 +32,13 @@ export function normalizeItem(item, now) {
   if (!item || !item.id || !item.title) throw new Error("接口记录缺少招聘 ID 或标题");
   // The school sometimes emits paths beginning with two slashes.
   const value = String(item.detailsUrl || item.url || "/f/recruitmentinfo/show?recruitmentId=" + encodeURIComponent(item.id));
-  const url = new URL(value.startsWith("//") ? "/" + value.replace(/^\/+/, "") : value, BASE_URL);
-  if (!["https:", "http:"].includes(url.protocol) || url.hostname !== new URL(BASE_URL).hostname) throw new Error("招聘来源链接不合法");
-  url.protocol = "https:";
-  url.pathname = "/" + url.pathname.replace(/^\/+/, "");
+  const detailUrl = officialUrl(buaa.id, value.startsWith("//") ? "/" + value.replace(/^\/+/, "") : value);
+  if (!detailUrl) throw new Error("招聘来源链接不合法");
   return {
     source: SOURCE, sourceId: String(item.id), company: String(item.corporationName || item.corporationinfo?.name || ""),
     title: String(item.title), jobType: String(item.positionType || ""), publishedAt: String(item.startTime || ""),
     deadline: String(item.endTime || ""), recruitingNumbers: String(item.recruitingNumbers ?? ""),
-    detailUrl: url.href, fetchedAt: now,
+    detailUrl, fetchedAt: now,
   };
 }
 

@@ -11,16 +11,29 @@ import { listJobs } from "../scripts/jobs-service.mjs";
 import { checkAdminAuthorization, isAuthorized, listPendingReviews, readBearerToken, updateReview, validateReviewInput } from "../scripts/reviews.mjs";
 import { notify } from "../scripts/notify.mjs";
 import { parsePagination } from "../scripts/query.mjs";
-import { getSource, SOURCES } from "../scripts/sources.mjs";
+import { getSource, officialUrl, officialUrlForSourceName, SOURCES } from "../scripts/sources.mjs";
 import { collectSource } from "../scripts/collector-registry.mjs";
 import { refreshSourceStatus } from "../scripts/source-status.mjs";
 
 test("高校来源配置集中管理", () => {
   assert.equal(getSource("buaa").name, "北京航空航天大学");
   assert.equal(getSource("buaa").baseUrl, "https://career.buaa.edu.cn");
+  assert.deepEqual(getSource("buaa").officialHosts, ["career.buaa.edu.cn"]);
   assert.equal(Object.keys(SOURCES).length, 1);
   assert.throws(() => getSource("unknown"), /未知高校来源/);
   assert.throws(() => getSource("constructor"), /未知高校来源/);
+});
+
+test("来源官方域名白名单拒绝伪装链接", () => {
+  const relative = "/f/recruitmentinfo/show?recruitmentId=1";
+  assert.equal(officialUrl("buaa", relative), `https://career.buaa.edu.cn${relative}`);
+  assert.equal(officialUrl("buaa", "http://career.buaa.edu.cn/f/test"), "https://career.buaa.edu.cn/f/test");
+  assert.equal(officialUrlForSourceName("北京航空航天大学", relative), `https://career.buaa.edu.cn${relative}`);
+  assert.equal(officialUrl("buaa", "https://career.buaa.edu.cn.evil.example/f/test"), "");
+  assert.equal(officialUrl("buaa", "https://user@career.buaa.edu.cn/f/test"), "");
+  assert.equal(officialUrl("buaa", "https://career.buaa.edu.cn:444/f/test"), "");
+  assert.equal(officialUrl("buaa", "javascript:alert(1)"), "");
+  assert.equal(officialUrlForSourceName("未知大学", "https://career.buaa.edu.cn/f/test"), "");
 });
 
 test("采集器接口按来源调度并校验结果", async () => {
@@ -149,6 +162,23 @@ test("分页参数边界与非法输入", () => {
   assert.deepEqual(parsePagination(new URLSearchParams("limit=999&offset=999999")), { limit: 500, offset: 100000 });
   assert.throws(() => parsePagination(new URLSearchParams("limit=-1")), /非负整数/);
   assert.throws(() => parsePagination(new URLSearchParams("offset=1.5")), /非负整数/);
+});
+
+test("公开接口只返回来源白名单内的官方链接", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "campus-jobs-links-"));
+  const db = await openDatabase(join(dir, "test.db"));
+  try {
+    const insert = db.prepare(`INSERT INTO jobs (source, source_id, company, title, detail_url, first_seen_at, last_seen_at, published_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    const now = new Date().toISOString();
+    insert.run("北京航空航天大学", "good", "甲公司", "官方链接", "https://career.buaa.edu.cn/f/good", now, now, "2026-09-29");
+    insert.run("北京航空航天大学", "bad", "乙公司", "伪装链接", "https://career.buaa.edu.cn.evil.example/f/bad", now, now, "2026-09-28");
+    insert.run("未知大学", "unknown", "丙公司", "未知来源", "https://career.buaa.edu.cn/f/unknown", now, now, "2026-09-27");
+    const jobs = listJobs(db).jobs;
+    assert.equal(jobs.find((job) => job.sourceId === "good").detailUrl, "https://career.buaa.edu.cn/f/good");
+    assert.equal(jobs.find((job) => job.sourceId === "bad").detailUrl, "");
+    assert.equal(jobs.find((job) => job.sourceId === "unknown").detailUrl, "");
+  } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 
 test("查询隐藏过滤、搜索、分页和空列表", async () => {

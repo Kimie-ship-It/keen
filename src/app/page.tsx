@@ -20,7 +20,7 @@ function sourceStatus(source: Source) {
 }
 
 function officialLink(url: string) {
-  try { const parsed = new URL(url); return parsed.protocol === "https:" && parsed.hostname === "career.buaa.edu.cn" ? parsed.href : ""; } catch { return ""; }
+  try { const parsed = new URL(url); return parsed.protocol === "https:" ? parsed.href : ""; } catch { return ""; }
 }
 
 export default function Home() {

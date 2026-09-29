@@ -1,10 +1,13 @@
+import { officialUrlForSourceName } from "./sources.mjs";
+
 const STALE_AFTER_HOURS = 36;
 
 export function listJobs(db, { q = "", limit = 100, offset = 0, now = Date.now() } = {}) {
   const search = String(q).trim().slice(0, 200);
   const like = `%${search}%`;
-  const jobs = db.prepare(`SELECT source, source_id AS sourceId, company, title, job_type AS jobType, published_at AS publishedAt, deadline, recruiting_numbers AS recruitingNumbers, detail_url AS detailUrl, first_seen_at AS firstSeenAt, review_status AS reviewStatus
+  const rows = db.prepare(`SELECT source, source_id AS sourceId, company, title, job_type AS jobType, published_at AS publishedAt, deadline, recruiting_numbers AS recruitingNumbers, detail_url AS detailUrl, first_seen_at AS firstSeenAt, review_status AS reviewStatus
     FROM jobs WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?) ORDER BY published_at DESC, id DESC LIMIT ? OFFSET ?`).all(search, like, like, limit, offset);
+  const jobs = rows.map((job) => ({ ...job, detailUrl: officialUrlForSourceName(job.source, job.detailUrl) }));
   const matchCount = db.prepare("SELECT COUNT(*) AS total FROM jobs WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?)").get(search, like, like).total;
   const stats = db.prepare(`SELECT COUNT(*) AS total, COUNT(DISTINCT source) AS sources,
     SUM(CASE WHEN date(first_seen_at, '+8 hours') = date('now', '+8 hours') THEN 1 ELSE 0 END) AS todayNew,
