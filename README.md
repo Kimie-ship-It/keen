@@ -77,6 +77,16 @@ npm run lint
 npm run build
 ```
 
+## 清单、备份和日志
+
+- `docs/PROJECT-CHECKLIST.md`：项目总清单。每次开始任务先查看，完成并验证后再勾选。
+- `docs/CHANGELOG.md`：重要变更日志，记录做了什么、为什么做以及验证结果。
+- `npm run backup:step -- "步骤名称"`：创建一次步骤备份。它会提交当前代码到本地 Git，并把数据库和采集快照备份到项目外的 `campus-jobs-backups` 文件夹。
+- `npm run backup:data`：手动创建运行数据备份。每日采集成功后也会自动执行，默认保留最近 14 份，可通过 `BACKUP_RETENTION_COUNT` 调整。
+- `data/logs/`：采集运行日志，记录任务实际运行过程，不等同于代码备份。
+
+备份分为两部分：Git 用于回退代码，数据库备份用于恢复运行数据。修改完成并通过测试后，应立即执行一次 `backup:step`。
+
 ## 主要目录
 
 - `src/app/`：Next.js 页面与 API。

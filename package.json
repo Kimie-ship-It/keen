@@ -10,6 +10,7 @@
     "collect:buaa": "node scripts/collect-buaa.mjs",
     "collect:watch": "node scripts/schedule-collector.mjs",
     "collect:daily": "node scripts/collect-daily.mjs",
+    "backup:data": "node scripts/runtime-backup.mjs",
     "backup:step": "node scripts/backup-step.mjs",
     "schedule:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-daily.ps1",
     "test": "node --test tests/*.test.mjs",

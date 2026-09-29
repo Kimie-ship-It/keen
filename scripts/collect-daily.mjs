@@ -1,10 +1,13 @@
 import "./config.mjs";
 import { collectBuaa } from "./collect-buaa.mjs";
 import { notify, notifyFailure } from "./notify.mjs";
+import { createRuntimeBackup } from "./runtime-backup.mjs";
 
 try {
   const result = await collectBuaa();
   console.log(JSON.stringify(result));
+  const backup = await createRuntimeBackup();
+  console.log(JSON.stringify({ backup: backup.destination, retention: backup.retention }));
   try { await notify("校招雷达日报：北航采集 " + result.count + " 条，本次新增 " + result.newCount + " 条。"); }
   catch (error) { console.error("采集成功，但通知失败：", error.message); }
 } catch (error) {
