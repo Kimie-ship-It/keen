@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SOURCES } from "./sources.mjs";
 import { refreshSourceStatus } from "./source-status.mjs";
+import { createDedupeKey } from "./dedupe.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const DB_PATH = process.env.CAMPUS_JOBS_DB || resolve(ROOT, "data", "campus-jobs.db");
@@ -68,7 +69,15 @@ export async function openDatabase(path = DB_PATH) {
   `);
   const columns = db.pragma("table_info(jobs)").map((column) => column.name);
   if (!columns.includes("review_status")) db.exec("ALTER TABLE jobs ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'");
-  db.exec("CREATE INDEX IF NOT EXISTS idx_jobs_published ON jobs(published_at); CREATE INDEX IF NOT EXISTS idx_runs_source ON source_runs(source, id); CREATE INDEX IF NOT EXISTS idx_review_events_id ON review_events(id)");
+  if (!columns.includes("dedupe_key")) db.exec("ALTER TABLE jobs ADD COLUMN dedupe_key TEXT NOT NULL DEFAULT ''");
+  const missingDedupeKeys = db.prepare("SELECT id, source, source_id AS sourceId, company, title FROM jobs WHERE dedupe_key='' OR dedupe_key IS NULL").all();
+  if (missingDedupeKeys.length) {
+    const updateDedupeKey = db.prepare("UPDATE jobs SET dedupe_key=? WHERE id=?");
+    db.transaction(() => {
+      for (const row of missingDedupeKeys) updateDedupeKey.run(createDedupeKey(row), row.id);
+    })();
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_jobs_published ON jobs(published_at); CREATE INDEX IF NOT EXISTS idx_jobs_dedupe ON jobs(dedupe_key); CREATE INDEX IF NOT EXISTS idx_runs_source ON source_runs(source, id); CREATE INDEX IF NOT EXISTS idx_review_events_id ON review_events(id)");
   db.transaction(() => {
     const seed = db.prepare("INSERT OR IGNORE INTO source_status (source) VALUES (?)");
     for (const source of Object.values(SOURCES)) seed.run(source.name);

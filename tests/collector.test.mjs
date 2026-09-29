@@ -14,6 +14,7 @@ import { parsePagination } from "../scripts/query.mjs";
 import { getSource, officialUrl, officialUrlForSourceName, SOURCES } from "../scripts/sources.mjs";
 import { collectSource } from "../scripts/collector-registry.mjs";
 import { refreshSourceStatus } from "../scripts/source-status.mjs";
+import { createDedupeKey } from "../scripts/dedupe.mjs";
 
 test("高校来源配置集中管理", () => {
   assert.equal(getSource("buaa").name, "北京航空航天大学");
@@ -178,6 +179,33 @@ test("公开接口只返回来源白名单内的官方链接", async () => {
     assert.equal(jobs.find((job) => job.sourceId === "good").detailUrl, "https://career.buaa.edu.cn/f/good");
     assert.equal(jobs.find((job) => job.sourceId === "bad").detailUrl, "");
     assert.equal(jobs.find((job) => job.sourceId === "unknown").detailUrl, "");
+  } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("多高校重复招聘合并展示但保留原始记录", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "campus-jobs-dedupe-"));
+  const db = await openDatabase(join(dir, "test.db"));
+  try {
+    const insert = db.prepare(`INSERT INTO jobs (source, source_id, company, title, detail_url, dedupe_key, first_seen_at, last_seen_at, published_at, review_status)
+      VALUES (@source, @sourceId, @company, @title, @detailUrl, @dedupeKey, @now, @now, @publishedAt, @reviewStatus)`);
+    const now = new Date().toISOString();
+    const shared = { company: "示例科技（中国）有限公司", title: "2027 届校园招聘", detailUrl: "", now, reviewStatus: "pending" };
+    insert.run({ ...shared, source: "甲大学", sourceId: "a", publishedAt: "2026-09-29", dedupeKey: createDedupeKey({ ...shared, source: "甲大学", sourceId: "a" }) });
+    insert.run({ ...shared, source: "乙大学", sourceId: "b", title: "2027届校园招聘！", publishedAt: "2026-09-30", reviewStatus: "approved", dedupeKey: createDedupeKey({ ...shared, title: "2027届校园招聘！", source: "乙大学", sourceId: "b" }) });
+    const distinct = { ...shared, source: "乙大学", sourceId: "c", title: "2027届实习生招聘", publishedAt: "2026-09-28" };
+    insert.run({ ...distinct, dedupeKey: createDedupeKey(distinct) });
+    const response = listJobs(db, { limit: 1 });
+    assert.equal(db.prepare("SELECT COUNT(*) AS total FROM jobs").get().total, 3);
+    assert.equal(response.matchCount, 2);
+    assert.equal(response.stats.total, 3);
+    assert.equal(response.stats.uniqueTotal, 2);
+    assert.equal(response.jobs.length, 1);
+    assert.equal(response.jobs[0].source, "乙大学");
+    assert.equal(response.jobs[0].reviewStatus, "approved");
+    assert.equal(response.jobs[0].sourceCount, 2);
+    assert.equal(response.jobs[0].duplicateCount, 2);
+    assert.deepEqual(response.jobs[0].sourceLinks, []);
+    assert.equal(listJobs(db, { limit: 1, offset: 1 }).jobs[0].sourceId, "c");
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 

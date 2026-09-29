@@ -1,4 +1,5 @@
 import { getSource, officialUrl } from "./sources.mjs";
+import { createDedupeKey } from "./dedupe.mjs";
 
 const buaa = getSource("buaa");
 export const SOURCE = buaa.name;
@@ -43,17 +44,17 @@ export function normalizeItem(item, now) {
 }
 
 export function saveRows(db, rows) {
-  const upsert = db.prepare(`INSERT INTO jobs (source, source_id, company, title, job_type, published_at, deadline, recruiting_numbers, detail_url, first_seen_at, last_seen_at)
-    VALUES (@source, @sourceId, @company, @title, @jobType, @publishedAt, @deadline, @recruitingNumbers, @detailUrl, @fetchedAt, @fetchedAt)
+  const upsert = db.prepare(`INSERT INTO jobs (source, source_id, company, title, job_type, published_at, deadline, recruiting_numbers, detail_url, dedupe_key, first_seen_at, last_seen_at)
+    VALUES (@source, @sourceId, @company, @title, @jobType, @publishedAt, @deadline, @recruitingNumbers, @detailUrl, @dedupeKey, @fetchedAt, @fetchedAt)
     ON CONFLICT(source, source_id) DO UPDATE SET company=excluded.company, title=excluded.title, job_type=excluded.job_type,
     published_at=excluded.published_at, deadline=excluded.deadline, recruiting_numbers=excluded.recruiting_numbers,
-    detail_url=excluded.detail_url, last_seen_at=excluded.last_seen_at`);
+    detail_url=excluded.detail_url, dedupe_key=excluded.dedupe_key, last_seen_at=excluded.last_seen_at`);
   return db.transaction(() => {
     const ids = new Set(db.prepare("SELECT source_id FROM jobs WHERE source=?").all(SOURCE).map((row) => row.source_id));
     let newCount = 0;
     for (const row of rows) {
       if (!ids.has(row.sourceId)) { newCount += 1; ids.add(row.sourceId); }
-      upsert.run(row);
+      upsert.run({ ...row, dedupeKey: createDedupeKey(row) });
     }
     return newCount;
   })();
