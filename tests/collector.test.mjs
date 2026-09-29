@@ -7,7 +7,7 @@ import { openDatabase, closeDatabase } from "../scripts/db.mjs";
 import { collectBuaa } from "../scripts/collect-buaa.mjs";
 import { normalizeItem, requestJson } from "../scripts/collection.mjs";
 import { listJobs } from "../scripts/jobs-service.mjs";
-import { isAuthorized, listPendingReviews, readBearerToken, updateReview, validateReviewInput } from "../scripts/reviews.mjs";
+import { checkAdminAuthorization, isAuthorized, listPendingReviews, readBearerToken, updateReview, validateReviewInput } from "../scripts/reviews.mjs";
 import { notify } from "../scripts/notify.mjs";
 import { parsePagination } from "../scripts/query.mjs";
 
@@ -146,6 +146,23 @@ test("管理授权和审核状态持久化", async () => {
     assert.equal(events[0].actor, "admin");
     assert.ok(!JSON.stringify(events).includes(token));
     assert.ok(Number.isFinite(Date.parse(events[0].createdAt)));
+  } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("管理口令连续失败限速、到期恢复和正确口令解锁", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "campus-jobs-auth-"));
+  const db = await openDatabase(join(dir, "test.db"));
+  const token = "a".repeat(32);
+  const start = Date.parse("2026-09-29T00:00:00Z");
+  try {
+    for (let i = 0; i < 4; i += 1) assert.equal(checkAdminAuthorization(db, token, "bad", start).status, 401);
+    assert.deepEqual(checkAdminAuthorization(db, token, "bad", start), { authorized: false, status: 429, retryAfter: 900 });
+    assert.equal(checkAdminAuthorization(db, token, "bad", start + 1000).retryAfter, 899);
+    assert.equal(checkAdminAuthorization(db, token, token, start + 2000).authorized, true);
+    assert.equal(checkAdminAuthorization(db, token, "bad", start + 3000).status, 401);
+    for (let i = 0; i < 4; i += 1) checkAdminAuthorization(db, token, "bad", start + 3000);
+    assert.equal(checkAdminAuthorization(db, token, "bad", start + 15 * 60 * 1000 + 3000).status, 401);
+    assert.equal(db.prepare("SELECT failures FROM admin_auth_limits WHERE id=1").get().failures, 1);
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 

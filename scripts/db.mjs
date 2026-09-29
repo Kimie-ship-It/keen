@@ -46,6 +46,11 @@ export async function openDatabase(path = DB_PATH) {
       actor TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS admin_auth_limits (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      window_started_at INTEGER NOT NULL,
+      failures INTEGER NOT NULL
+    );
   `);
   const columns = db.pragma("table_info(jobs)").map((column) => column.name);
   if (!columns.includes("review_status")) db.exec("ALTER TABLE jobs ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'");

@@ -12,6 +12,27 @@ export function readBearerToken(header = "") {
   return match ? match[1] : "";
 }
 
+const AUTH_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_MAX_FAILURES = 5;
+
+export function checkAdminAuthorization(db, configured, supplied, now = Date.now()) {
+  return db.transaction(() => {
+    if (isAuthorized(configured, supplied)) {
+      db.prepare("DELETE FROM admin_auth_limits WHERE id=1").run();
+      return { authorized: true, status: 200 };
+    }
+    const current = db.prepare("SELECT window_started_at AS startedAt, failures FROM admin_auth_limits WHERE id=1").get();
+    const active = current && now >= current.startedAt && now - current.startedAt < AUTH_WINDOW_MS;
+    const startedAt = active ? current.startedAt : now;
+    const failures = (active ? current.failures : 0) + 1;
+    db.prepare("INSERT INTO admin_auth_limits (id, window_started_at, failures) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET window_started_at=excluded.window_started_at, failures=excluded.failures")
+      .run(startedAt, failures);
+    return failures >= AUTH_MAX_FAILURES
+      ? { authorized: false, status: 429, retryAfter: Math.ceil((AUTH_WINDOW_MS - (now - startedAt)) / 1000) }
+      : { authorized: false, status: 401 };
+  })();
+}
+
 export function listPendingReviews(db, { limit = 100, offset = 0 } = {}) {
   const jobs = db.prepare("SELECT source, source_id AS sourceId, company, title, review_status AS reviewStatus FROM jobs WHERE review_status='pending' ORDER BY first_seen_at DESC, id DESC LIMIT ? OFFSET ?").all(limit, offset);
   const pendingCount = db.prepare("SELECT COUNT(*) AS total FROM jobs WHERE review_status='pending'").get().total;
