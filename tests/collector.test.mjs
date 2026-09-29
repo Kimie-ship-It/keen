@@ -100,11 +100,16 @@ test("查询隐藏过滤、搜索、分页和空列表", async () => {
     insert.run("甲大学", "1", "甲公司", "研发招聘", now, now, "2026-09-29", "pending");
     insert.run("乙大学", "2", "乙公司", "产品招聘", now, now, "2026-09-28", "approved");
     insert.run("乙大学", "3", "隐藏公司", "隐藏招聘", now, now, "2026-09-27", "hidden");
+    db.prepare("INSERT INTO source_runs (source, started_at, finished_at, status, fetched_count, new_count) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("甲大学", "2026-09-29T00:00:00Z", "2026-09-29T00:00:00Z", "success", 2, 2);
     db.prepare("INSERT INTO source_runs (source, started_at, finished_at, status, fetched_count, new_count, error) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run("甲大学", now, now, "failed", 0, 0, "内部路径不应公开");
     assert.equal(listJobs(db, { limit: 1 }).jobs.length, 1);
     assert.equal(listJobs(db, { limit: 1 }).matchCount, 2);
     assert.equal(Object.hasOwn(listJobs(db).runs[0], "error"), false);
+    assert.equal(listJobs(db, { now: Date.parse("2026-09-30T00:00:00Z") }).freshness.isStale, false);
+    assert.equal(listJobs(db, { now: Date.parse("2026-10-02T00:00:01Z") }).freshness.isStale, true);
+    assert.equal(listJobs(db).freshness.lastSuccessfulAt, "2026-09-29T00:00:00Z");
     assert.equal(listJobs(db, { q: "乙公司" }).jobs[0].sourceId, "2");
     assert.deepEqual(listJobs(db, { q: "不存在" }).jobs, []);
     assert.equal(listJobs(db, { offset: 1 }).jobs[0].sourceId, "2");

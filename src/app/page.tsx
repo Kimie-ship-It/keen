@@ -8,8 +8,9 @@ type Job = { source: string; sourceId: string; company: string; title: string; j
 type Stats = { total: number; sources: number; todayNew: number; dueSoon: number };
 type Source = { source: string; total: number };
 type Run = { source: string; status: string; finishedAt: string; fetchedCount: number; newCount: number };
-type Data = { jobs: Job[]; matchCount: number; stats: Stats; sources: Source[]; runs: Run[] };
-const initial: Data = { jobs: [], matchCount: 0, stats: { total: 0, sources: 0, todayNew: 0, dueSoon: 0 }, sources: [], runs: [] };
+type Freshness = { lastSuccessfulAt: string | null; isStale: boolean; staleAfterHours: number };
+type Data = { jobs: Job[]; matchCount: number; stats: Stats; sources: Source[]; runs: Run[]; freshness: Freshness };
+const initial: Data = { jobs: [], matchCount: 0, stats: { total: 0, sources: 0, todayNew: 0, dueSoon: 0 }, sources: [], runs: [], freshness: { lastSuccessfulAt: null, isStale: true, staleAfterHours: 36 } };
 
 function officialLink(url: string) {
   try { const parsed = new URL(url); return parsed.protocol === "https:" && parsed.hostname === "career.buaa.edu.cn" ? parsed.href : ""; } catch { return ""; }
@@ -78,6 +79,7 @@ export default function Home() {
       {error && <p role="alert" className={styles.empty}>{error}，请稍后重试。</p>}
       {view === "jobs" && <>
         <section className={styles.hero}><div><div className={styles.eyebrow}>公开高校就业信息</div><h1>找到下一站，<em>从校招开始</em></h1><p>招聘详情与投递方式请以高校官方公告为准。</p></div><div className={styles.heroStats}><div><strong>{data.stats.sources}</strong><span>已接入高校</span></div><div><strong>{data.stats.todayNew || 0}</strong><span>今日发现</span></div><div><strong>{data.stats.dueSoon || 0}</strong><span>7天内截止</span></div></div></section>
+        <section className={`${styles.freshnessNotice} ${data.freshness.isStale ? styles.freshnessWarn : ""}`} role={data.freshness.isStale ? "alert" : undefined}><Clock3 size={16} /><span>{data.freshness.lastSuccessfulAt ? `最近成功更新：${new Date(data.freshness.lastSuccessfulAt).toLocaleString("zh-CN")}` : "尚无成功采集记录"}</span><strong>{data.freshness.isStale ? `已超过 ${data.freshness.staleAfterHours} 小时未成功更新，请重点核对官方公告` : "数据更新正常"}</strong></section>
         <section className={styles.searchPanel}><div className={styles.searchInput}><Search size={19} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索公司或招聘标题" aria-label="搜索公司或招聘标题" /></div></section>
         <div className={styles.sectionHead}><div><span className={styles.sectionKicker}>LATEST POSTS</span><h2>最新招聘</h2></div><div className={styles.resultMeta}>显示 {filtered.length} / {data.matchCount} 条，数据库共 {data.stats.total} 条</div></div>
         <section className={styles.jobList}>{filtered.map((job) => {

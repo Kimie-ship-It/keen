@@ -6,8 +6,15 @@ import { createRuntimeBackup } from "./runtime-backup.mjs";
 try {
   const result = await collectBuaa();
   console.log(JSON.stringify(result));
-  const backup = await createRuntimeBackup();
-  console.log(JSON.stringify({ backup: backup.destination, retention: backup.retention }));
+  try {
+    const backup = await createRuntimeBackup();
+    console.log(JSON.stringify({ backup: backup.destination, retention: backup.retention }));
+  } catch (error) {
+    console.error("采集成功，但数据库备份失败：", error.message);
+    process.exitCode = 1;
+    try { await notifyFailure(new Error(`数据库备份失败：${error.message}`)); }
+    catch (noticeError) { console.error("备份故障通知失败：", noticeError.message); }
+  }
   try { await notify("校招雷达日报：北航采集 " + result.count + " 条，本次新增 " + result.newCount + " 条。"); }
   catch (error) { console.error("采集成功，但通知失败：", error.message); }
 } catch (error) {
