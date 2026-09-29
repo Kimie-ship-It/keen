@@ -13,6 +13,7 @@ import { notify } from "../scripts/notify.mjs";
 import { parsePagination } from "../scripts/query.mjs";
 import { getSource, SOURCES } from "../scripts/sources.mjs";
 import { collectSource } from "../scripts/collector-registry.mjs";
+import { refreshSourceStatus } from "../scripts/source-status.mjs";
 
 test("高校来源配置集中管理", () => {
   assert.equal(getSource("buaa").name, "北京航空航天大学");
@@ -165,15 +166,43 @@ test("查询隐藏过滤、搜索、分页和空列表", async () => {
       .run("甲大学", "2026-09-29T00:00:00Z", "2026-09-29T00:00:00Z", "success", 2, 2);
     db.prepare("INSERT INTO source_runs (source, started_at, finished_at, status, fetched_count, new_count, error) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run("甲大学", now, now, "failed", 0, 0, "内部路径不应公开");
+    refreshSourceStatus(db, "甲大学");
     assert.equal(listJobs(db, { limit: 1 }).jobs.length, 1);
     assert.equal(listJobs(db, { limit: 1 }).matchCount, 2);
     assert.equal(Object.hasOwn(listJobs(db).runs[0], "error"), false);
-    assert.equal(listJobs(db, { now: Date.parse("2026-09-30T00:00:00Z") }).freshness.isStale, false);
-    assert.equal(listJobs(db, { now: Date.parse("2026-10-02T00:00:01Z") }).freshness.isStale, true);
+    const nextDay = listJobs(db, { now: Date.parse("2026-09-30T00:00:00Z") });
+    assert.equal(nextDay.freshness.isStale, true);
+    assert.equal(nextDay.freshness.failedSources, 1);
+    assert.equal(nextDay.sources.find((source) => source.source === "甲大学").lastStatus, "failed");
+    assert.equal(nextDay.sources.find((source) => source.source === "乙大学").isStale, true);
+    assert.ok(!JSON.stringify(nextDay).includes("内部路径不应公开"));
+    assert.equal(listJobs(db, { now: Date.parse("2026-10-02T00:00:01Z") }).freshness.staleSources, 2);
     assert.equal(listJobs(db).freshness.lastSuccessfulAt, "2026-09-29T00:00:00Z");
     assert.equal(listJobs(db, { q: "乙公司" }).jobs[0].sourceId, "2");
     assert.deepEqual(listJobs(db, { q: "不存在" }).jobs, []);
     assert.equal(listJobs(db, { offset: 1 }).jobs[0].sourceId, "2");
+  } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("逐高校更新时间独立判断，不被其他高校成功更新掩盖", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "campus-jobs-source-view-"));
+  const db = await openDatabase(join(dir, "test.db"));
+  try {
+    const insert = db.prepare("INSERT INTO source_runs (source, started_at, finished_at, status, fetched_count, new_count, error) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    insert.run("甲大学", "2026-09-27T00:00:00Z", "2026-09-27T00:01:00Z", "success", 2, 2, null);
+    insert.run("乙大学", "2026-09-30T00:00:00Z", "2026-09-30T00:01:00Z", "success", 1, 1, null);
+    insert.run("丙大学", "2026-09-30T00:00:00Z", "2026-09-30T00:01:00Z", "failed", 0, 0, "secret-path");
+    for (const source of ["甲大学", "乙大学", "丙大学"]) refreshSourceStatus(db, source);
+    const response = listJobs(db, { now: Date.parse("2026-09-30T01:00:00Z") });
+    assert.equal(response.sources.length, 3);
+    assert.equal(response.sources.find((source) => source.source === "甲大学").isStale, true);
+    assert.equal(response.sources.find((source) => source.source === "乙大学").isStale, false);
+    assert.equal(response.sources.find((source) => source.source === "丙大学").lastStatus, "failed");
+    assert.equal(response.freshness.staleSources, 2);
+    assert.equal(response.freshness.failedSources, 1);
+    assert.equal(response.freshness.lastSuccessfulAt, "2026-09-30T00:01:00Z");
+    assert.equal(response.freshness.isStale, true);
+    assert.ok(!JSON.stringify(response).includes("secret-path"));
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 
