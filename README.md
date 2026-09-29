@@ -95,6 +95,7 @@ npm run build
 
 - `src/app/`：Next.js 页面与 API。
 - `scripts/`：数据库、采集、通知和计划任务脚本。
+- `scripts/sources.mjs`：已接入高校的来源配置，目前仅北航。
 - `tests/`：采集、查询、审核和通知测试。
 - `data/`：本地数据库、快照和日志，均不应提交。
 

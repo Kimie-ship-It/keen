@@ -1,5 +1,8 @@
-export const SOURCE = "北京航空航天大学";
-export const BASE_URL = "https://career.buaa.edu.cn";
+import { getSource } from "./sources.mjs";
+
+const buaa = getSource("buaa");
+export const SOURCE = buaa.name;
+export const BASE_URL = buaa.baseUrl;
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function requestJson(url, options = {}, settings = {}) {

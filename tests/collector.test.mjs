@@ -10,6 +10,15 @@ import { listJobs } from "../scripts/jobs-service.mjs";
 import { checkAdminAuthorization, isAuthorized, listPendingReviews, readBearerToken, updateReview, validateReviewInput } from "../scripts/reviews.mjs";
 import { notify } from "../scripts/notify.mjs";
 import { parsePagination } from "../scripts/query.mjs";
+import { getSource, SOURCES } from "../scripts/sources.mjs";
+
+test("高校来源配置集中管理", () => {
+  assert.equal(getSource("buaa").name, "北京航空航天大学");
+  assert.equal(getSource("buaa").baseUrl, "https://career.buaa.edu.cn");
+  assert.equal(Object.keys(SOURCES).length, 1);
+  assert.throws(() => getSource("unknown"), /未知高校来源/);
+  assert.throws(() => getSource("constructor"), /未知高校来源/);
+});
 
 test("采集去重、审核状态保留、失败不丢数据", async () => {
   const dir = await mkdtemp(join(tmpdir(), "campus-jobs-"));
