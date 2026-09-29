@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDatabase, closeDatabase } from "./db.mjs";
 import { BASE_URL, SOURCE, requestJson, normalizeItem, saveRows, sleep } from "./collection.mjs";
+import { refreshSourceStatus } from "./source-status.mjs";
 
 const PAGE_SIZE = 100;
 const OUTPUT = new URL("../data/buaa-recruitments.json", import.meta.url);
@@ -26,7 +27,9 @@ export async function collectBuaa(options = {}) {
       db.prepare("UPDATE source_runs SET status='failed', finished_at=?, error='上次进程中断或运行超过两小时' WHERE source=? AND status='running' AND started_at<?")
         .run(startedAt, SOURCE, new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString());
       if (db.prepare("SELECT id FROM source_runs WHERE source=? AND status='running'").get(SOURCE)) throw new Error("同一来源的采集正在运行，请勿重复启动");
-      return db.prepare("INSERT INTO source_runs (source, started_at, status) VALUES (?, ?, 'running')").run(SOURCE, startedAt);
+      const inserted = db.prepare("INSERT INTO source_runs (source, started_at, status) VALUES (?, ?, 'running')").run(SOURCE, startedAt);
+      refreshSourceStatus(db, SOURCE);
+      return inserted;
     })();
   } catch (error) { closeDatabase(db); throw error; }
   try {
@@ -54,8 +57,11 @@ export async function collectBuaa(options = {}) {
     const rows = pages.flatMap((page) => page.list).map((item) => normalizeItem(item, now));
     if (!rows.length) throw new Error("接口返回空列表，保留现有数据并等待人工确认");
     const newCount = saveRows(db, rows);
-    db.prepare("UPDATE source_runs SET finished_at=?, status='success', fetched_count=?, new_count=? WHERE id=?")
-      .run(now, rows.length, newCount, run.lastInsertRowid);
+    db.transaction(() => {
+      db.prepare("UPDATE source_runs SET finished_at=?, status='success', fetched_count=?, new_count=? WHERE id=?")
+        .run(now, rows.length, newCount, run.lastInsertRowid);
+      refreshSourceStatus(db, SOURCE);
+    })();
     if (!options.skipSnapshot) {
       try {
         await mkdir(new URL("../data/", import.meta.url), { recursive: true });
@@ -64,8 +70,11 @@ export async function collectBuaa(options = {}) {
     }
     return { source: SOURCE, count: rows.length, newCount, fetchedAt: now };
   } catch (error) {
-    db.prepare("UPDATE source_runs SET finished_at=?, status='failed', error=? WHERE id=?")
-      .run(new Date().toISOString(), String(error?.message || error), run.lastInsertRowid);
+    db.transaction(() => {
+      db.prepare("UPDATE source_runs SET finished_at=?, status='failed', error=? WHERE id=?")
+        .run(new Date().toISOString(), String(error?.message || error), run.lastInsertRowid);
+      refreshSourceStatus(db, SOURCE);
+    })();
     throw error;
   } finally { closeDatabase(db); }
 }

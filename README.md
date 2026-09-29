@@ -38,6 +38,7 @@ npm run collect:daily
 ```
 
 采集器会请求高校公开接口，按来源和招聘 ID 增量写入 `data/campus-jobs.db`。接口异常、空列表或中途失败时不会清空已有招聘记录。`data/buaa-recruitments.json` 是便于排查的本地快照，不是网站的数据源。
+`source_status` 表保存高校采集的最新状态和最近成功、失败时间；升级旧数据库时会从已有采集记录回填。内部错误详情不会由公开接口返回。
 
 ## 每日自动更新
 

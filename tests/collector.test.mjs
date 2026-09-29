@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { openDatabase, closeDatabase } from "../scripts/db.mjs";
 import { collectBuaa } from "../scripts/collect-buaa.mjs";
 import { normalizeItem, requestJson } from "../scripts/collection.mjs";
@@ -51,6 +52,9 @@ test("采集去重、审核状态保留、失败不丢数据", async () => {
     const options = { dbPath: path, fetchImpl: fakeFetch, skipSnapshot: true, wait: async () => {} };
     assert.equal((await collectBuaa(options)).newCount, 1);
     const db = await openDatabase(path);
+    const firstSuccess = db.prepare("SELECT last_status AS status, last_success_at AS successAt, fetched_count AS fetchedCount FROM source_status WHERE source=?").get("北京航空航天大学");
+    assert.equal(firstSuccess.status, "success");
+    assert.equal(firstSuccess.fetchedCount, 1);
     db.prepare("UPDATE jobs SET review_status='approved' WHERE source_id='a'").run();
     closeDatabase(db);
     assert.equal((await collectBuaa(options)).newCount, 0);
@@ -62,7 +66,39 @@ test("采集去重、审核状态保留、失败不丢数据", async () => {
     assert.equal(result.prepare("SELECT review_status FROM jobs WHERE source_id='a'").get().review_status, "approved");
     assert.equal(result.prepare("SELECT status FROM source_runs ORDER BY id DESC LIMIT 1").get().status, "failed");
     assert.equal(result.prepare("SELECT detail_url FROM jobs WHERE source_id='a'").get().detail_url, "https://career.buaa.edu.cn/f/recruitmentinfo/show?recruitmentId=a");
+    const failedState = result.prepare("SELECT last_status AS status, last_success_at AS successAt, last_failure_at AS failureAt, last_error AS error FROM source_status WHERE source=?").get("北京航空航天大学");
+    assert.equal(failedState.status, "failed");
+    assert.ok(failedState.successAt >= firstSuccess.successAt);
+    assert.ok(failedState.failureAt);
+    assert.match(failedState.error, /network down/);
     closeDatabase(result);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("旧数据库的高校运行记录补入来源状态表", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "campus-jobs-migration-"));
+  const path = join(dir, "legacy.db");
+  try {
+    const legacy = new Database(path);
+    legacy.exec(`CREATE TABLE source_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, started_at TEXT NOT NULL,
+      finished_at TEXT, status TEXT NOT NULL, fetched_count INTEGER NOT NULL DEFAULT 0,
+      new_count INTEGER NOT NULL DEFAULT 0, error TEXT)`);
+    const insert = legacy.prepare("INSERT INTO source_runs (source, started_at, finished_at, status, fetched_count, new_count, error) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    insert.run("北京航空航天大学", "2026-09-29T00:00:00Z", "2026-09-29T00:01:00Z", "success", 12, 2, null);
+    insert.run("北京航空航天大学", "2026-09-30T00:00:00Z", "2026-09-30T00:01:00Z", "failed", 0, 0, "旧错误详情");
+    legacy.close();
+    const db = await openDatabase(path);
+    const status = db.prepare("SELECT * FROM source_status WHERE source=?").get("北京航空航天大学");
+    assert.equal(status.last_status, "failed");
+    assert.equal(status.last_success_at, "2026-09-29T00:01:00Z");
+    assert.equal(status.last_failure_at, "2026-09-30T00:01:00Z");
+    assert.equal(status.last_error, "旧错误详情");
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM source_status").get().count, 1);
+    closeDatabase(db);
+    const reopened = await openDatabase(path);
+    assert.equal(reopened.prepare("SELECT COUNT(*) AS count FROM source_status").get().count, 1);
+    closeDatabase(reopened);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -101,6 +137,8 @@ test("空列表和分页中途失败不写入半成品", async () => {
     const db = await openDatabase(path);
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM jobs").get().count, 0);
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM source_runs WHERE status='failed'").get().count, 2);
+    assert.equal(db.prepare("SELECT last_status FROM source_status WHERE source='北京航空航天大学'").get().last_status, "failed");
+    assert.equal(db.prepare("SELECT last_success_at FROM source_status WHERE source='北京航空航天大学'").get().last_success_at, null);
     closeDatabase(db);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

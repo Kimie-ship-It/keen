@@ -2,6 +2,8 @@ import Database from "better-sqlite3";
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SOURCES } from "./sources.mjs";
+import { refreshSourceStatus } from "./source-status.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const DB_PATH = process.env.CAMPUS_JOBS_DB || resolve(ROOT, "data", "campus-jobs.db");
@@ -11,6 +13,7 @@ export async function openDatabase(path = DB_PATH) {
   const db = new Database(path);
   db.pragma("busy_timeout = 5000");
   db.pragma("journal_mode = WAL");
+  const hadSourceStatus = !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='source_status'").get();
   db.exec(`
     CREATE TABLE IF NOT EXISTS jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,6 +40,17 @@ export async function openDatabase(path = DB_PATH) {
       new_count INTEGER NOT NULL DEFAULT 0,
       error TEXT
     );
+    CREATE TABLE IF NOT EXISTS source_status (
+      source TEXT PRIMARY KEY,
+      last_started_at TEXT,
+      last_finished_at TEXT,
+      last_status TEXT NOT NULL DEFAULT 'never',
+      last_success_at TEXT,
+      last_failure_at TEXT,
+      last_error TEXT,
+      fetched_count INTEGER NOT NULL DEFAULT 0,
+      new_count INTEGER NOT NULL DEFAULT 0
+    );
     CREATE TABLE IF NOT EXISTS review_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       source TEXT NOT NULL,
@@ -55,6 +69,13 @@ export async function openDatabase(path = DB_PATH) {
   const columns = db.pragma("table_info(jobs)").map((column) => column.name);
   if (!columns.includes("review_status")) db.exec("ALTER TABLE jobs ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'");
   db.exec("CREATE INDEX IF NOT EXISTS idx_jobs_published ON jobs(published_at); CREATE INDEX IF NOT EXISTS idx_runs_source ON source_runs(source, id); CREATE INDEX IF NOT EXISTS idx_review_events_id ON review_events(id)");
+  db.transaction(() => {
+    const seed = db.prepare("INSERT OR IGNORE INTO source_status (source) VALUES (?)");
+    for (const source of Object.values(SOURCES)) seed.run(source.name);
+    if (!hadSourceStatus) {
+      for (const { source } of db.prepare("SELECT DISTINCT source FROM source_runs").all()) refreshSourceStatus(db, source);
+    }
+  })();
   return db;
 }
 
