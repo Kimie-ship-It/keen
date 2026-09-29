@@ -11,6 +11,7 @@ import { checkAdminAuthorization, isAuthorized, listPendingReviews, readBearerTo
 import { notify } from "../scripts/notify.mjs";
 import { parsePagination } from "../scripts/query.mjs";
 import { getSource, SOURCES } from "../scripts/sources.mjs";
+import { collectSource } from "../scripts/collector-registry.mjs";
 
 test("高校来源配置集中管理", () => {
   assert.equal(getSource("buaa").name, "北京航空航天大学");
@@ -18,6 +19,19 @@ test("高校来源配置集中管理", () => {
   assert.equal(Object.keys(SOURCES).length, 1);
   assert.throws(() => getSource("unknown"), /未知高校来源/);
   assert.throws(() => getSource("constructor"), /未知高校来源/);
+});
+
+test("采集器接口按来源调度并校验结果", async () => {
+  const options = { skipSnapshot: true };
+  const result = { source: "北京航空航天大学", count: 3, newCount: 1, fetchedAt: "2026-09-29T00:00:00Z" };
+  assert.deepEqual(await collectSource("buaa", options, { buaa: async (received) => {
+    assert.equal(received, options);
+    return result;
+  } }), result);
+  await assert.rejects(collectSource("unknown", {}, {}), /未知高校来源/);
+  await assert.rejects(collectSource("buaa", {}, {}), /缺少采集器/);
+  await assert.rejects(collectSource("buaa", {}, { buaa: async () => ({ ...result, count: 0 }) }), /格式异常/);
+  await assert.rejects(collectSource("buaa", {}, { buaa: async () => { throw new Error("采集失败"); } }), /采集失败/);
 });
 
 test("采集去重、审核状态保留、失败不丢数据", async () => {
