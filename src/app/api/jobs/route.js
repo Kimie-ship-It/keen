@@ -10,13 +10,14 @@ export async function GET(request) {
   const q = (url.searchParams.get("q")?.trim() || "").slice(0, 200);
   const source = (url.searchParams.get("source")?.trim() || "").slice(0, 100);
   const city = (url.searchParams.get("city")?.trim() || "").slice(0, 100);
+  const industry = (url.searchParams.get("industry")?.trim() || "").slice(0, 100);
   let pagination;
   try { pagination = parsePagination(url.searchParams); }
   catch (error) { return NextResponse.json({ error: error.message }, { status: 400 }); }
   const { limit, offset } = pagination;
   const db = await openDatabase();
   try {
-    return NextResponse.json(listJobs(db, { q, source, city, limit, offset }));
+    return NextResponse.json(listJobs(db, { q, source, city, industry, limit, offset }));
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   } finally {

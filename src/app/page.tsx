@@ -11,8 +11,9 @@ type Source = { source: string; total: number; lastStatus: string | null; lastFi
 type Run = { source: string; status: string; finishedAt: string; fetchedCount: number; newCount: number };
 type Freshness = { lastSuccessfulAt: string | null; isStale: boolean; staleAfterHours: number; staleSources: number; failedSources: number };
 type Location = { location: string; total: number };
-type Data = { jobs: Job[]; matchCount: number; stats: Stats; sources: Source[]; runs: Run[]; freshness: Freshness; locations: Location[] };
-const initial: Data = { jobs: [], matchCount: 0, stats: { total: 0, uniqueTotal: 0, sources: 0, todayNew: 0, dueSoon: 0 }, sources: [], runs: [], freshness: { lastSuccessfulAt: null, isStale: true, staleAfterHours: 36, failedSources: 0, staleSources: 0 }, locations: [] };
+type Industry = { industry: string; total: number };
+type Data = { jobs: Job[]; matchCount: number; stats: Stats; sources: Source[]; runs: Run[]; freshness: Freshness; locations: Location[]; industries: Industry[] };
+const initial: Data = { jobs: [], matchCount: 0, stats: { total: 0, uniqueTotal: 0, sources: 0, todayNew: 0, dueSoon: 0 }, sources: [], runs: [], freshness: { lastSuccessfulAt: null, isStale: true, staleAfterHours: 36, failedSources: 0, staleSources: 0 }, locations: [], industries: [] };
 
 function sourceStatus(source: Source) {
   if (source.lastStatus === "failed") return "最近采集失败";
@@ -31,6 +32,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [selectedSource, setSelectedSource] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
+  const [selectedIndustry, setSelectedIndustry] = useState("");
   const [selected, setSelected] = useState<Job | null>(null);
   const [saved, setSaved] = useState<string[]>([]);
   const [ready, setReady] = useState(false);
@@ -39,7 +41,7 @@ export default function Home() {
   const requestId = useRef(0);
   const activeRequest = useRef<AbortController | null>(null);
 
-  const refresh = useCallback(async (search: string, source: string, city: string, offset = 0) => {
+  const refresh = useCallback(async (search: string, source: string, city: string, industry: string, offset = 0) => {
     const id = requestId.current + 1;
     requestId.current = id;
     activeRequest.current?.abort();
@@ -47,7 +49,7 @@ export default function Home() {
     activeRequest.current = controller;
     setLoading(true);
     try {
-      const response = await fetch(`/api/jobs?limit=100&offset=${offset}&q=${encodeURIComponent(search)}&source=${encodeURIComponent(source)}&city=${encodeURIComponent(city)}`, { cache: "no-store", signal: controller.signal });
+      const response = await fetch(`/api/jobs?limit=100&offset=${offset}&q=${encodeURIComponent(search)}&source=${encodeURIComponent(source)}&city=${encodeURIComponent(city)}&industry=${encodeURIComponent(industry)}`, { cache: "no-store", signal: controller.signal });
       if (!response.ok) throw new Error("读取招聘数据失败");
       const result: Data = await response.json();
       if (id !== requestId.current) return;
@@ -70,7 +72,7 @@ export default function Home() {
       setReady(true);
     });
   }, []);
-  useEffect(() => { const timer = setTimeout(() => { void refresh(query, selectedSource, selectedCity, 0); }, 250); return () => clearTimeout(timer); }, [query, selectedSource, selectedCity, refresh]);
+  useEffect(() => { const timer = setTimeout(() => { void refresh(query, selectedSource, selectedCity, selectedIndustry, 0); }, 250); return () => clearTimeout(timer); }, [query, selectedSource, selectedCity, selectedIndustry, refresh]);
   useEffect(() => { if (ready) localStorage.setItem("campus-jobs:saved", JSON.stringify(saved)); }, [saved, ready]);
   const toggleSaved = (id: string) => setSaved((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
   const filtered = data.jobs;
@@ -87,7 +89,7 @@ export default function Home() {
         <button className={view === "schools" ? styles.navActive : ""} onClick={() => setView("schools")}><GraduationCap size={16} /> 高校来源</button>
         <button className={view === "status" ? styles.navActive : ""} onClick={() => setView("status")}><LayoutDashboard size={16} /> 采集状态</button>
       </nav>
-      <button className={styles.iconButton} onClick={() => void refresh(query, selectedSource, selectedCity, 0)} title="刷新数据" aria-label="刷新数据"><RefreshCw size={18} /></button>
+      <button className={styles.iconButton} onClick={() => void refresh(query, selectedSource, selectedCity, selectedIndustry, 0)} title="刷新数据" aria-label="刷新数据"><RefreshCw size={18} /></button>
     </div></header>
     <main className={styles.main}>
       {error && <p role="alert" className={styles.empty}>{error}，请稍后重试。</p>}
@@ -105,6 +107,10 @@ export default function Home() {
               <option value="">全部城市</option>
               {data.locations.map((item) => <option key={item.location} value={item.location}>{item.location}（{item.total}）</option>)}
             </select>
+            <select value={selectedIndustry} onChange={(event) => setSelectedIndustry(event.target.value)} aria-label="按行业筛选">
+              <option value="">全部行业</option>
+              {data.industries.map((item) => <option key={item.industry} value={item.industry}>{item.industry}（{item.total}）</option>)}
+            </select>
           </div>
         </section>
         <div className={styles.sectionHead}><div><span className={styles.sectionKicker}>LATEST POSTS</span><h2>最新招聘</h2></div><div className={styles.resultMeta}>显示 {filtered.length} / {data.matchCount} 条，合并前 {data.stats.total} 条原始记录</div></div>
@@ -116,7 +122,7 @@ export default function Home() {
             <div className={styles.cardBottom}><span className={styles.source}>招聘人数：{job.recruitingNumbers || "见公告"}</span><span>截止：{job.deadline?.slice(0, 10) || "见公告"}</span><button className={styles.textButton} onClick={() => setSelected(job)}>查看详情</button></div>
             {job.sourceCount > 1 && <span className={styles.duplicateNote}>已合并 {job.sourceCount} 所高校的 {job.duplicateCount} 条记录</span>}
           </div></article>;
-        })}{!loading && !filtered.length && <div className={styles.empty}>暂无匹配的招聘信息</div>}{filtered.length < data.matchCount && <button className={styles.outlineButton} onClick={() => void refresh(query, selectedSource, selectedCity, filtered.length)} disabled={loading}>加载更多</button>}</section>
+        })}{!loading && !filtered.length && <div className={styles.empty}>暂无匹配的招聘信息</div>}{filtered.length < data.matchCount && <button className={styles.outlineButton} onClick={() => void refresh(query, selectedSource, selectedCity, selectedIndustry, filtered.length)} disabled={loading}>加载更多</button>}</section>
       </>}
       {view === "schools" && <section className={styles.dashboardPage}><div className={styles.pageIntro}><div><span className={styles.sectionKicker}>SOURCES</span><h1>高校来源</h1><p>显示已采集或已尝试采集的高校，招聘信息请以官方公告为准。</p></div></div><div className={styles.sourceSummary}><div><strong>{data.stats.sources}</strong><span>已有招聘数据</span></div><div><strong>{data.stats.total}</strong><span>累计招聘</span></div></div><div className={styles.tableCard}><table><thead><tr><th>高校</th><th>招聘记录</th><th>最近成功</th><th>最近采集</th><th>状态</th></tr></thead><tbody>{data.sources.map((source) => <tr key={source.source}><td><strong>{source.source}</strong></td><td>{source.total}</td><td>{source.lastSuccessfulAt ? new Date(source.lastSuccessfulAt).toLocaleString("zh-CN") : "尚无"}</td><td>{source.lastFinishedAt ? new Date(source.lastFinishedAt).toLocaleString("zh-CN") : source.lastStatus === "running" ? "采集中" : "未知"}</td><td className={source.lastStatus === "failed" || source.isStale ? styles.statusWarn : styles.statusGood}>{sourceStatus(source)}</td></tr>)}</tbody></table></div></section>}
       {view === "status" && <section className={styles.dashboardPage}><div className={styles.pageIntro}><div><span className={styles.sectionKicker}>COLLECTION</span><h1>采集状态</h1><p>公开运行记录。采集任务由独立进程执行，本页面不提供管理权限。</p></div></div><div className={styles.sourceSummary}><div><strong>{data.stats.total}</strong><span>已存入数据库</span></div><div><strong>{latest?.newCount ?? 0}</strong><span>最近一次新增</span></div><div><strong>{data.freshness.failedSources + data.sources.filter((source) => source.isStale && source.lastStatus !== "failed").length}</strong><span>需关注高校</span></div></div><div className={styles.sectionHead}><h2>高校更新状态</h2></div><div className={styles.tableCard}><table><thead><tr><th>高校</th><th>最近成功</th><th>最近失败</th><th>状态</th></tr></thead><tbody>{data.sources.map((source) => <tr key={source.source}><td>{source.source}</td><td>{source.lastSuccessfulAt ? new Date(source.lastSuccessfulAt).toLocaleString("zh-CN") : "尚无"}</td><td>{source.lastFailureAt ? new Date(source.lastFailureAt).toLocaleString("zh-CN") : "无"}</td><td className={source.lastStatus === "failed" || source.isStale ? styles.statusWarn : styles.statusGood}>{sourceStatus(source)}</td></tr>)}</tbody></table></div><div className={styles.sectionHead}><h2>最近运行记录</h2></div><div className={styles.tableCard}><table><thead><tr><th>高校</th><th>完成时间</th><th>状态</th><th>采集数</th><th>新增数</th></tr></thead><tbody>{data.runs.map((run, index) => <tr key={index}><td>{run.source}</td><td>{run.finishedAt ? new Date(run.finishedAt).toLocaleString("zh-CN") : "运行中"}</td><td>{run.status === "success" ? "成功" : run.status === "failed" ? "失败" : "运行中"}</td><td>{run.fetchedCount}</td><td>{run.newCount}</td></tr>)}</tbody></table></div></section>}

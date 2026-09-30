@@ -6,23 +6,27 @@ const GROUP_KEY_SQL = `CASE WHEN dedupe_key <> '' AND EXISTS (
     AND peer.dedupe_key=jobs.dedupe_key AND peer.source<>jobs.source
 ) THEN dedupe_key ELSE 'record:row:' || jobs.id END`;
 
-export function listJobs(db, { q = "", source = "", city = "", limit = 100, offset = 0, now = Date.now() } = {}) {
+export function listJobs(db, { q = "", source = "", city = "", industry = "", limit = 100, offset = 0, now = Date.now() } = {}) {
   const search = String(q).trim().slice(0, 200);
   const sourceName = String(source).trim().slice(0, 100);
   const cityName = String(city).trim().slice(0, 100);
+  const industryName = String(industry).trim().slice(0, 100);
   if (sourceName && !getSourceByName(sourceName)) throw new Error(`未知高校来源：${sourceName}`);
   if (cityName && !db.prepare("SELECT 1 FROM job_locations WHERE location=? LIMIT 1").get(cityName)) throw new Error(`未知工作城市：${cityName}`);
+  if (industryName && !db.prepare("SELECT 1 FROM job_industries WHERE industry=? LIMIT 1").get(industryName)) throw new Error(`未知行业：${industryName}`);
   const like = `%${search}%`;
   const sourceFilter = sourceName ? " AND source = ?" : "";
   const sourceParams = sourceName ? [sourceName] : [];
   const cityFilter = cityName ? " AND EXISTS (SELECT 1 FROM job_locations AS location_filter WHERE location_filter.job_id=jobs.id AND location_filter.location=?)" : "";
   const cityParams = cityName ? [cityName] : [];
+  const industryFilter = industryName ? " AND EXISTS (SELECT 1 FROM job_industries AS industry_filter WHERE industry_filter.job_id=jobs.id AND industry_filter.industry=?)" : "";
+  const industryParams = industryName ? [industryName] : [];
   const groupKeySql = sourceName ? "'record:row:' || jobs.id" : GROUP_KEY_SQL;
   const rows = db.prepare(`WITH normalized AS (
       SELECT id, source, source_id AS sourceId, company, title, job_type AS jobType, published_at AS publishedAt,
         deadline, recruiting_numbers AS recruitingNumbers, detail_url AS detailUrl, first_seen_at AS firstSeenAt,
         review_status AS reviewStatus, ${groupKeySql} AS groupKey
-      FROM jobs WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?)${sourceFilter}${cityFilter}
+      FROM jobs WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?)${sourceFilter}${cityFilter}${industryFilter}
     ), ranked AS (
       SELECT *, ROW_NUMBER() OVER (PARTITION BY groupKey ORDER BY
         CASE reviewStatus WHEN 'approved' THEN 0 ELSE 1 END, publishedAt DESC, id DESC) AS rank
@@ -30,13 +34,13 @@ export function listJobs(db, { q = "", source = "", city = "", limit = 100, offs
     )
     SELECT source, sourceId, company, title, jobType, publishedAt, deadline, recruitingNumbers,
       detailUrl, firstSeenAt, reviewStatus, groupKey
-    FROM ranked WHERE rank=1 ORDER BY publishedAt DESC, id DESC LIMIT ? OFFSET ?`).all(search, like, like, ...sourceParams, ...cityParams, limit, offset);
+    FROM ranked WHERE rank=1 ORDER BY publishedAt DESC, id DESC LIMIT ? OFFSET ?`).all(search, like, like, ...sourceParams, ...cityParams, ...industryParams, limit, offset);
   const matchCount = db.prepare(`SELECT COUNT(DISTINCT ${groupKeySql}) AS total FROM jobs
-    WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?)${sourceFilter}${cityFilter}`).get(search, like, like, ...sourceParams, ...cityParams).total;
+    WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?)${sourceFilter}${cityFilter}${industryFilter}`).get(search, like, like, ...sourceParams, ...cityParams, ...industryParams).total;
   const memberRows = rows.length ? db.prepare(`SELECT source, source_id AS sourceId, published_at AS publishedAt,
       detail_url AS detailUrl, id AS jobId, ${groupKeySql} AS groupKey
-    FROM jobs WHERE review_status <> 'hidden' AND ${groupKeySql} IN (${rows.map(() => "?").join(",")})${sourceFilter}${cityFilter}
-    ORDER BY published_at DESC, id DESC`).all(...rows.map((row) => row.groupKey), ...sourceParams, ...cityParams) : [];
+    FROM jobs WHERE review_status <> 'hidden' AND ${groupKeySql} IN (${rows.map(() => "?").join(",")})${sourceFilter}${cityFilter}${industryFilter}
+    ORDER BY published_at DESC, id DESC`).all(...rows.map((row) => row.groupKey), ...sourceParams, ...cityParams, ...industryParams) : [];
   const locationRows = memberRows.length ? db.prepare(`SELECT job_id AS jobId, location FROM job_locations WHERE job_id IN (${memberRows.map(() => "?").join(",")}) ORDER BY location`).all(...memberRows.map((row) => row.jobId)) : [];
   const locationsByJob = new Map();
   for (const row of locationRows) locationsByJob.set(row.jobId, [...(locationsByJob.get(row.jobId) || []), row.location]);
@@ -66,8 +70,8 @@ export function listJobs(db, { q = "", source = "", city = "", limit = 100, offs
   });
   const stats = db.prepare(`SELECT COUNT(*) AS total, COUNT(DISTINCT source) AS sources,
     SUM(CASE WHEN date(first_seen_at, '+8 hours') = date('now', '+8 hours') THEN 1 ELSE 0 END) AS todayNew,
-    SUM(CASE WHEN deadline <> '' AND date(substr(deadline, 1, 10)) BETWEEN date('now', '+8 hours') AND date('now', '+8 hours', '+7 days') THEN 1 ELSE 0 END) AS dueSoon FROM jobs WHERE review_status <> 'hidden'${sourceFilter}${cityFilter}`).get(...sourceParams, ...cityParams);
-  stats.uniqueTotal = db.prepare(`SELECT COUNT(DISTINCT ${groupKeySql}) AS total FROM jobs WHERE review_status <> 'hidden'${sourceFilter}${cityFilter}`).get(...sourceParams, ...cityParams).total;
+    SUM(CASE WHEN deadline <> '' AND date(substr(deadline, 1, 10)) BETWEEN date('now', '+8 hours') AND date('now', '+8 hours', '+7 days') THEN 1 ELSE 0 END) AS dueSoon FROM jobs WHERE review_status <> 'hidden'${sourceFilter}${cityFilter}${industryFilter}`).get(...sourceParams, ...cityParams, ...industryParams);
+  stats.uniqueTotal = db.prepare(`SELECT COUNT(DISTINCT ${groupKeySql}) AS total FROM jobs WHERE review_status <> 'hidden'${sourceFilter}${cityFilter}${industryFilter}`).get(...sourceParams, ...cityParams, ...industryParams).total;
   const sourceRows = db.prepare(`WITH names AS (
       SELECT source FROM source_status WHERE last_status <> 'never'
       UNION SELECT source FROM jobs
@@ -101,6 +105,9 @@ export function listJobs(db, { q = "", source = "", city = "", limit = 100, offs
   const locationOptions = db.prepare(`SELECT location, COUNT(*) AS total FROM job_locations
     INNER JOIN jobs ON jobs.id=job_locations.job_id WHERE jobs.review_status <> 'hidden'
     GROUP BY location ORDER BY total DESC, location`).all().map((row) => ({ location: row.location, total: row.total }));
+  const industryOptions = db.prepare(`SELECT industry, COUNT(*) AS total FROM job_industries
+    INNER JOIN jobs ON jobs.id=job_industries.job_id WHERE jobs.review_status <> 'hidden'
+    GROUP BY industry ORDER BY CASE industry WHEN '未分类' THEN 1 ELSE 0 END, total DESC, industry`).all().map((row) => ({ industry: row.industry, total: row.total }));
   return {
     jobs,
     matchCount,
@@ -109,5 +116,6 @@ export function listJobs(db, { q = "", source = "", city = "", limit = 100, offs
     runs,
     freshness,
     locations: locationOptions,
+    industries: industryOptions,
   };
 }

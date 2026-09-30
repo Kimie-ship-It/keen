@@ -19,6 +19,7 @@ import { collectConfiguredSources, collectSource } from "../scripts/collector-re
 import { refreshSourceStatus } from "../scripts/source-status.mjs";
 import { createDedupeKey } from "../scripts/dedupe.mjs";
 import { extractLocations, normalizeLocation } from "../scripts/locations.mjs";
+import { classifyIndustries } from "../scripts/industries.mjs";
 
 async function buaaFixture(name) {
   return JSON.parse(await readFile(new URL(`./fixtures/buaa/${name}.json`, import.meta.url), "utf8"));
@@ -485,6 +486,25 @@ test("工作地点提取和城市筛选", async () => {
     assert.deepEqual(beijing.jobs[0].locations, ["北京"]);
     assert.equal(listJobs(db, { city: "北京", source: "北京航空航天大学", q: "北京岗位" }).jobs.length, 1);
     assert.throws(() => listJobs(db, { city: "不存在城市" }), /未知工作城市/);
+  } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("行业分类和行业筛选", async () => {
+  assert.deepEqual(classifyIndustries({ company: "招商银行股份有限公司", title: "金融科技管培生" }), ["金融"]);
+  assert.deepEqual(classifyIndustries({ company: "未知公司", title: "综合岗位" }), ["未分类"]);
+  const dir = await mkdtemp(join(tmpdir(), "campus-jobs-industry-"));
+  const db = await openDatabase(join(dir, "test.db"));
+  try {
+    const now = new Date().toISOString();
+    const insert = db.prepare("INSERT INTO jobs (source, source_id, company, title, first_seen_at, last_seen_at, published_at, review_status, dedupe_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    const finance = insert.run("北京航空航天大学", "industry-a", "招商银行", "金融科技岗位", now, now, "2026-09-30", "pending", "industry-a").lastInsertRowid;
+    const tech = insert.run("北京理工大学", "industry-b", "某信息技术公司", "软件工程师", now, now, "2026-09-29", "pending", "industry-b").lastInsertRowid;
+    db.prepare("INSERT INTO job_industries (job_id, industry) VALUES (?, ?), (?, ?)").run(finance, "金融", tech, "信息技术/互联网");
+    const result = listJobs(db, { industry: "金融" });
+    assert.equal(result.matchCount, 1);
+    assert.equal(result.jobs[0].company, "招商银行");
+    assert.equal(listJobs(db, { industry: "金融", source: "北京航空航天大学" }).jobs.length, 1);
+    assert.throws(() => listJobs(db, { industry: "不存在行业" }), /未知行业/);
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 

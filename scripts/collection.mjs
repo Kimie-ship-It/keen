@@ -1,5 +1,6 @@
 import { getSource, officialUrl } from "./sources.mjs";
 import { createDedupeKey } from "./dedupe.mjs";
+import { classifyIndustries } from "./industries.mjs";
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -63,10 +64,16 @@ export function saveRows(db, sourceId, rows) {
     location_checked_at=CASE WHEN excluded.title<>jobs.title OR excluded.published_at<>jobs.published_at THEN '' ELSE jobs.location_checked_at END`);
   return db.transaction(() => {
     const ids = new Set(db.prepare("SELECT source_id FROM jobs WHERE source=?").all(source.name).map((row) => row.source_id));
+    const findId = db.prepare("SELECT id FROM jobs WHERE source=? AND source_id=?");
+    const clearIndustries = db.prepare("DELETE FROM job_industries WHERE job_id=?");
+    const addIndustry = db.prepare("INSERT OR IGNORE INTO job_industries (job_id, industry) VALUES (?, ?)");
     let newCount = 0;
     for (const row of rows) {
       if (!ids.has(row.sourceId)) { newCount += 1; ids.add(row.sourceId); }
       upsert.run({ ...row, dedupeKey: createDedupeKey(row) });
+      const job = findId.get(source.name, row.sourceId);
+      clearIndustries.run(job.id);
+      for (const industry of classifyIndustries(row)) addIndustry.run(job.id, industry);
     }
     return newCount;
   })();

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { SOURCES } from "./sources.mjs";
 import { refreshSourceStatus } from "./source-status.mjs";
 import { createDedupeKey } from "./dedupe.mjs";
+import { classifyIndustries } from "./industries.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const DB_PATH = process.env.CAMPUS_JOBS_DB || resolve(ROOT, "data", "campus-jobs.db");
@@ -35,6 +36,12 @@ export async function openDatabase(path = DB_PATH) {
       job_id INTEGER NOT NULL,
       location TEXT NOT NULL,
       PRIMARY KEY (job_id, location),
+      FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS job_industries (
+      job_id INTEGER NOT NULL,
+      industry TEXT NOT NULL,
+      PRIMARY KEY (job_id, industry),
       FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS source_runs (
@@ -84,7 +91,14 @@ export async function openDatabase(path = DB_PATH) {
       for (const row of missingDedupeKeys) updateDedupeKey.run(createDedupeKey(row), row.id);
     })();
   }
-  db.exec("CREATE INDEX IF NOT EXISTS idx_jobs_published ON jobs(published_at); CREATE INDEX IF NOT EXISTS idx_jobs_dedupe ON jobs(dedupe_key); CREATE INDEX IF NOT EXISTS idx_runs_source ON source_runs(source, id); CREATE INDEX IF NOT EXISTS idx_review_events_id ON review_events(id); CREATE INDEX IF NOT EXISTS idx_job_locations_location ON job_locations(location, job_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_jobs_published ON jobs(published_at); CREATE INDEX IF NOT EXISTS idx_jobs_dedupe ON jobs(dedupe_key); CREATE INDEX IF NOT EXISTS idx_runs_source ON source_runs(source, id); CREATE INDEX IF NOT EXISTS idx_review_events_id ON review_events(id); CREATE INDEX IF NOT EXISTS idx_job_locations_location ON job_locations(location, job_id); CREATE INDEX IF NOT EXISTS idx_job_industries_industry ON job_industries(industry, job_id)");
+  const unclassifiedJobs = db.prepare("SELECT jobs.id, jobs.company, jobs.title, jobs.job_type AS jobType FROM jobs LEFT JOIN job_industries ON job_industries.job_id=jobs.id WHERE job_industries.job_id IS NULL").all();
+  if (unclassifiedJobs.length) {
+    const addIndustry = db.prepare("INSERT OR IGNORE INTO job_industries (job_id, industry) VALUES (?, ?)");
+    db.transaction(() => {
+      for (const job of unclassifiedJobs) for (const industry of classifyIndustries(job)) addIndustry.run(job.id, industry);
+    })();
+  }
   db.transaction(() => {
     const seed = db.prepare("INSERT OR IGNORE INTO source_status (source) VALUES (?)");
     for (const source of Object.values(SOURCES)) seed.run(source.name);
