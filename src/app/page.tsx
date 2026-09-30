@@ -125,10 +125,11 @@ export default function Home() {
         <div className={styles.sectionHead}><div><span className={styles.sectionKicker}>LATEST POSTS</span><h2>最新招聘</h2></div><div className={styles.resultMeta}>显示 {filtered.length} / {data.matchCount} 条，合并前 {data.stats.total} 条原始记录</div></div>
         <section className={styles.jobList}>{filtered.map((job) => {
           const id = `${job.source}:${job.sourceId}`;
+          const detailHref = `/jobs/${encodeURIComponent(job.source)}/${encodeURIComponent(job.sourceId)}`;
           return <article className={styles.jobCard} key={id}><div className={styles.jobLogo}>{job.company.slice(0, 1)}</div><div className={styles.jobBody}>
             <div className={styles.jobTitleRow}><div><h3><button className={styles.textButton} onClick={() => setSelected(job)}>{job.title}</button></h3><p className={styles.company}>{job.company}</p></div><button className={styles.saveButton} onClick={() => toggleSaved(id)} title={saved.includes(id) ? "取消收藏" : "收藏"} aria-label={saved.includes(id) ? "取消收藏" : "收藏"}><Bookmark size={18} fill={saved.includes(id) ? "currentColor" : "none"} /></button></div>
             <div className={styles.metaRow}><span><GraduationCap size={14} /> {job.source}</span><span><Clock3 size={14} /> 发布 {job.publishedAt || "未注明"}</span><span>工作地点：{job.locations.length ? job.locations.join("、") : "未注明"}</span><span>{job.reviewStatus === "approved" ? "已人工核验" : "待人工核验"}</span></div>
-            <div className={styles.cardBottom}><span className={styles.source}>招聘人数：{job.recruitingNumbers || "见公告"}</span><span>截止：{job.deadline?.slice(0, 10) || "见公告"}</span><button className={styles.textButton} onClick={() => setSelected(job)}>查看详情</button></div>
+            <div className={styles.cardBottom}><span className={styles.source}>招聘人数：{job.recruitingNumbers || "见公告"}</span><span>截止：{job.deadline?.slice(0, 10) || "见公告"}</span><a className={styles.textButton} href={detailHref}>查看详情</a></div>
             {job.sourceCount > 1 && <span className={styles.duplicateNote}>已合并 {job.sourceCount} 所高校的 {job.duplicateCount} 条记录</span>}
           </div></article>;
         })}{!loading && !filtered.length && <div className={styles.empty}>暂无匹配的招聘信息</div>}{filtered.length < data.matchCount && <button className={styles.outlineButton} onClick={() => void refresh(query, selectedSource, selectedCity, selectedIndustry, selectedDeadline, filtered.length)} disabled={loading}>加载更多</button>}</section>

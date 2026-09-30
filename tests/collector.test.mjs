@@ -10,7 +10,7 @@ import { collectBit } from "../scripts/collect-bit.mjs";
 import { collectBjtu } from "../scripts/collect-bjtu.mjs";
 import { collectNankai, parseNankaiPage } from "../scripts/collect-nankai.mjs";
 import { normalizeItem, requestJson } from "../scripts/collection.mjs";
-import { listJobs } from "../scripts/jobs-service.mjs";
+import { getJobDetail, listJobs } from "../scripts/jobs-service.mjs";
 import { checkAdminAuthorization, isAuthorized, listPendingReviews, readBearerToken, updateReview, validateReviewInput } from "../scripts/reviews.mjs";
 import { notify } from "../scripts/notify.mjs";
 import { parsePagination } from "../scripts/query.mjs";
@@ -524,6 +524,27 @@ test("截止日期筛选和组合查询", async () => {
     assert.equal(listJobs(db, { deadline: "expired", now: Date.parse("2026-09-30T00:00:00Z") }).jobs[0].sourceId, "deadline-c");
     assert.equal(listJobs(db, { deadline: "unknown", industry: "信息技术/互联网", source: "北京理工大学", now: Date.parse("2026-09-30T00:00:00Z") }).matchCount, 1);
     assert.throws(() => listJobs(db, { deadline: "bad" }), /未知截止日期筛选/);
+  } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("招聘详情保留合并来源、地点、行业和官方链接", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "campus-jobs-detail-"));
+  const db = await openDatabase(join(dir, "test.db"));
+  try {
+    const now = new Date().toISOString();
+    const insert = db.prepare("INSERT INTO jobs (source, source_id, company, title, first_seen_at, last_seen_at, published_at, deadline, detail_url, review_status, dedupe_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    const first = insert.run("北京航空航天大学", "detail-a", "甲科技", "联合招聘", now, now, "2026-09-30", "2026-10-15", "https://career.buaa.edu.cn/f/a", "pending", "same-detail").lastInsertRowid;
+    const second = insert.run("北京理工大学", "detail-b", "甲科技", "联合招聘", now, now, "2026-09-29", "2026-10-15", "https://job.bit.edu.cn/f/b", "approved", "same-detail").lastInsertRowid;
+    db.prepare("INSERT INTO job_locations (job_id, location) VALUES (?, ?), (?, ?)").run(first, "北京", second, "上海");
+    db.prepare("INSERT INTO job_industries (job_id, industry) VALUES (?, ?), (?, ?)").run(first, "信息技术/互联网", second, "信息技术/互联网");
+    const detail = getJobDetail(db, { source: "北京航空航天大学", sourceId: "detail-a" });
+    assert.equal(detail.title, "联合招聘");
+    assert.equal(detail.reviewStatus, "approved");
+    assert.equal(detail.sourceCount, 2);
+    assert.deepEqual(detail.locations, ["北京", "上海"]);
+    assert.deepEqual(detail.industries, ["信息技术/互联网"]);
+    assert.deepEqual(detail.sourceLinks.map((link) => link.source).sort(), ["北京理工大学", "北京航空航天大学"]);
+    assert.equal(getJobDetail(db, { source: "未知大学", sourceId: "detail-a" }), null);
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 

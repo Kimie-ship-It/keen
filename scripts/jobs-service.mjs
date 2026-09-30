@@ -6,6 +6,59 @@ const GROUP_KEY_SQL = `CASE WHEN dedupe_key <> '' AND EXISTS (
     AND peer.dedupe_key=jobs.dedupe_key AND peer.source<>jobs.source
 ) THEN dedupe_key ELSE 'record:row:' || jobs.id END`;
 
+function hydrateJob(db, rows) {
+  if (!rows.length) return null;
+  const representative = [...rows].sort((a, b) => {
+    const review = (a.reviewStatus === "approved" ? 0 : 1) - (b.reviewStatus === "approved" ? 0 : 1);
+    return review || String(b.publishedAt).localeCompare(String(a.publishedAt)) || b.id - a.id;
+  })[0];
+  const memberIds = rows.map((row) => row.id);
+  const placeholders = memberIds.map(() => "?").join(",");
+  const locationRows = db.prepare(`SELECT job_id AS jobId, location FROM job_locations WHERE job_id IN (${placeholders}) ORDER BY location`).all(...memberIds);
+  const industryRows = db.prepare(`SELECT job_id AS jobId, industry FROM job_industries WHERE job_id IN (${placeholders}) ORDER BY industry`).all(...memberIds);
+  const locationsByJob = new Map();
+  const industriesByJob = new Map();
+  for (const row of locationRows) locationsByJob.set(row.jobId, [...(locationsByJob.get(row.jobId) || []), row.location]);
+  for (const row of industryRows) industriesByJob.set(row.jobId, [...(industriesByJob.get(row.jobId) || []), row.industry]);
+  const sourceLinks = rows.map((row) => ({
+    source: row.source,
+    sourceId: row.sourceId,
+    publishedAt: row.publishedAt,
+    detailUrl: officialUrlForSourceName(row.source, row.detailUrl),
+  })).filter((row) => row.detailUrl);
+  return {
+    source: representative.source,
+    sourceId: representative.sourceId,
+    company: representative.company,
+    title: representative.title,
+    jobType: representative.jobType,
+    publishedAt: representative.publishedAt,
+    deadline: representative.deadline,
+    recruitingNumbers: representative.recruitingNumbers,
+    detailUrl: officialUrlForSourceName(representative.source, representative.detailUrl) || sourceLinks[0]?.detailUrl || "",
+    firstSeenAt: representative.firstSeenAt,
+    reviewStatus: representative.reviewStatus,
+    sourceCount: new Set(rows.map((row) => row.source)).size || 1,
+    duplicateCount: rows.length,
+    locations: [...new Set(rows.flatMap((row) => locationsByJob.get(row.id) || []))],
+    industries: [...new Set(rows.flatMap((row) => industriesByJob.get(row.id) || []))],
+    sourceLinks,
+  };
+}
+
+export function getJobDetail(db, { source, sourceId } = {}) {
+  const sourceName = String(source || "").trim().slice(0, 100);
+  const id = String(sourceId || "").trim().slice(0, 200);
+  if (!sourceName || !id || !getSourceByName(sourceName)) return null;
+  const target = db.prepare(`SELECT ${GROUP_KEY_SQL} AS groupKey FROM jobs WHERE source=? AND source_id=? AND review_status <> 'hidden'`).get(sourceName, id);
+  if (!target) return null;
+  const rows = db.prepare(`SELECT id, source, source_id AS sourceId, company, title, job_type AS jobType,
+      published_at AS publishedAt, deadline, recruiting_numbers AS recruitingNumbers, detail_url AS detailUrl,
+      first_seen_at AS firstSeenAt, review_status AS reviewStatus
+    FROM jobs WHERE review_status <> 'hidden' AND ${GROUP_KEY_SQL}=? ORDER BY published_at DESC, id DESC`).all(target.groupKey);
+  return hydrateJob(db, rows);
+}
+
 export function listJobs(db, { q = "", source = "", city = "", industry = "", deadline = "", limit = 100, offset = 0, now = Date.now() } = {}) {
   const search = String(q).trim().slice(0, 200);
   const sourceName = String(source).trim().slice(0, 100);
