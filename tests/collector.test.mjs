@@ -393,9 +393,9 @@ test("多高校重复招聘合并展示但保留原始记录", async () => {
       VALUES (@source, @sourceId, @company, @title, @detailUrl, @dedupeKey, @now, @now, @publishedAt, @reviewStatus)`);
     const now = new Date().toISOString();
     const shared = { company: "示例科技（中国）有限公司", title: "2027 届校园招聘", detailUrl: "", now, reviewStatus: "pending" };
-    insert.run({ ...shared, source: "甲大学", sourceId: "a", publishedAt: "2026-09-29", dedupeKey: createDedupeKey({ ...shared, source: "甲大学", sourceId: "a" }) });
-    insert.run({ ...shared, source: "乙大学", sourceId: "b", title: "2027届校园招聘！", publishedAt: "2026-09-30", reviewStatus: "approved", dedupeKey: createDedupeKey({ ...shared, title: "2027届校园招聘！", source: "乙大学", sourceId: "b" }) });
-    const distinct = { ...shared, source: "乙大学", sourceId: "c", title: "2027届实习生招聘", publishedAt: "2026-09-28" };
+    insert.run({ ...shared, source: "北京航空航天大学", sourceId: "a", detailUrl: "https://career.buaa.edu.cn/f/a", publishedAt: "2026-09-29", dedupeKey: createDedupeKey({ ...shared, source: "北京航空航天大学", sourceId: "a" }) });
+    insert.run({ ...shared, source: "北京理工大学", sourceId: "b", detailUrl: "https://job.bit.edu.cn/f/b", title: "2027届校园招聘！", publishedAt: "2026-09-30", reviewStatus: "approved", dedupeKey: createDedupeKey({ ...shared, title: "2027届校园招聘！", source: "北京理工大学", sourceId: "b" }) });
+    const distinct = { ...shared, source: "北京理工大学", sourceId: "c", detailUrl: "https://job.bit.edu.cn/f/c", title: "2027届实习生招聘", publishedAt: "2026-09-28" };
     insert.run({ ...distinct, dedupeKey: createDedupeKey(distinct) });
     const response = listJobs(db, { limit: 1 });
     assert.equal(db.prepare("SELECT COUNT(*) AS total FROM jobs").get().total, 3);
@@ -403,12 +403,24 @@ test("多高校重复招聘合并展示但保留原始记录", async () => {
     assert.equal(response.stats.total, 3);
     assert.equal(response.stats.uniqueTotal, 2);
     assert.equal(response.jobs.length, 1);
-    assert.equal(response.jobs[0].source, "乙大学");
+    assert.equal(response.jobs[0].source, "北京理工大学");
     assert.equal(response.jobs[0].reviewStatus, "approved");
     assert.equal(response.jobs[0].sourceCount, 2);
     assert.equal(response.jobs[0].duplicateCount, 2);
-    assert.deepEqual(response.jobs[0].sourceLinks, []);
+    assert.deepEqual(response.jobs[0].sourceLinks.map((link) => link.source), ["北京理工大学", "北京航空航天大学"]);
     assert.equal(listJobs(db, { limit: 1, offset: 1 }).jobs[0].sourceId, "c");
+    const filtered = listJobs(db, { source: "北京航空航天大学" });
+    assert.equal(filtered.jobs.length, 1);
+    assert.equal(filtered.jobs[0].source, "北京航空航天大学");
+    assert.equal(filtered.jobs[0].sourceCount, 1);
+    assert.equal(filtered.jobs[0].duplicateCount, 1);
+    assert.deepEqual(filtered.jobs[0].sourceLinks.map((link) => link.source), ["北京航空航天大学"]);
+    assert.equal(filtered.matchCount, 1);
+    assert.equal(filtered.stats.total, 1);
+    assert.equal(filtered.stats.uniqueTotal, 1);
+    assert.equal(filtered.stats.sources, 1);
+    assert.equal(listJobs(db, { source: "北京理工大学", q: "实习生" }).jobs[0].sourceId, "c");
+    assert.throws(() => listJobs(db, { source: "不存在大学" }), /未知高校来源/);
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 

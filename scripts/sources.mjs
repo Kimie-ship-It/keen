@@ -55,6 +55,10 @@ export function getSource(id) {
   return SOURCES[id];
 }
 
+export function getSourceByName(name) {
+  return SOURCES_BY_NAME.get(String(name || ""));
+}
+
 export function officialUrl(sourceId, value) {
   const source = getSource(sourceId);
   let url;

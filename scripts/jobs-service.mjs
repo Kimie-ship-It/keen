@@ -1,4 +1,4 @@
-import { officialUrlForSourceName } from "./sources.mjs";
+import { getSourceByName, officialUrlForSourceName } from "./sources.mjs";
 
 const STALE_AFTER_HOURS = 36;
 const GROUP_KEY_SQL = `CASE WHEN dedupe_key <> '' AND EXISTS (
@@ -6,14 +6,19 @@ const GROUP_KEY_SQL = `CASE WHEN dedupe_key <> '' AND EXISTS (
     AND peer.dedupe_key=jobs.dedupe_key AND peer.source<>jobs.source
 ) THEN dedupe_key ELSE 'record:row:' || jobs.id END`;
 
-export function listJobs(db, { q = "", limit = 100, offset = 0, now = Date.now() } = {}) {
+export function listJobs(db, { q = "", source = "", limit = 100, offset = 0, now = Date.now() } = {}) {
   const search = String(q).trim().slice(0, 200);
+  const sourceName = String(source).trim().slice(0, 100);
+  if (sourceName && !getSourceByName(sourceName)) throw new Error(`未知高校来源：${sourceName}`);
   const like = `%${search}%`;
+  const sourceFilter = sourceName ? " AND source = ?" : "";
+  const sourceParams = sourceName ? [sourceName] : [];
+  const groupKeySql = sourceName ? "'record:row:' || jobs.id" : GROUP_KEY_SQL;
   const rows = db.prepare(`WITH normalized AS (
       SELECT id, source, source_id AS sourceId, company, title, job_type AS jobType, published_at AS publishedAt,
         deadline, recruiting_numbers AS recruitingNumbers, detail_url AS detailUrl, first_seen_at AS firstSeenAt,
-        review_status AS reviewStatus, ${GROUP_KEY_SQL} AS groupKey
-      FROM jobs WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?)
+        review_status AS reviewStatus, ${groupKeySql} AS groupKey
+      FROM jobs WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?)${sourceFilter}
     ), ranked AS (
       SELECT *, ROW_NUMBER() OVER (PARTITION BY groupKey ORDER BY
         CASE reviewStatus WHEN 'approved' THEN 0 ELSE 1 END, publishedAt DESC, id DESC) AS rank
@@ -21,13 +26,13 @@ export function listJobs(db, { q = "", limit = 100, offset = 0, now = Date.now()
     )
     SELECT source, sourceId, company, title, jobType, publishedAt, deadline, recruitingNumbers,
       detailUrl, firstSeenAt, reviewStatus, groupKey
-    FROM ranked WHERE rank=1 ORDER BY publishedAt DESC, id DESC LIMIT ? OFFSET ?`).all(search, like, like, limit, offset);
-  const matchCount = db.prepare(`SELECT COUNT(DISTINCT ${GROUP_KEY_SQL}) AS total FROM jobs
-    WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?)`).get(search, like, like).total;
+    FROM ranked WHERE rank=1 ORDER BY publishedAt DESC, id DESC LIMIT ? OFFSET ?`).all(search, like, like, ...sourceParams, limit, offset);
+  const matchCount = db.prepare(`SELECT COUNT(DISTINCT ${groupKeySql}) AS total FROM jobs
+    WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?)${sourceFilter}`).get(search, like, like, ...sourceParams).total;
   const memberRows = rows.length ? db.prepare(`SELECT source, source_id AS sourceId, published_at AS publishedAt,
-      detail_url AS detailUrl, ${GROUP_KEY_SQL} AS groupKey
-    FROM jobs WHERE review_status <> 'hidden' AND ${GROUP_KEY_SQL} IN (${rows.map(() => "?").join(",")})
-    ORDER BY published_at DESC, id DESC`).all(...rows.map((row) => row.groupKey)) : [];
+      detail_url AS detailUrl, ${groupKeySql} AS groupKey
+    FROM jobs WHERE review_status <> 'hidden' AND ${groupKeySql} IN (${rows.map(() => "?").join(",")})${sourceFilter}
+    ORDER BY published_at DESC, id DESC`).all(...rows.map((row) => row.groupKey), ...sourceParams) : [];
   const membersByGroup = new Map();
   for (const member of memberRows) {
     const members = membersByGroup.get(member.groupKey) || [];
@@ -53,8 +58,8 @@ export function listJobs(db, { q = "", limit = 100, offset = 0, now = Date.now()
   });
   const stats = db.prepare(`SELECT COUNT(*) AS total, COUNT(DISTINCT source) AS sources,
     SUM(CASE WHEN date(first_seen_at, '+8 hours') = date('now', '+8 hours') THEN 1 ELSE 0 END) AS todayNew,
-    SUM(CASE WHEN deadline <> '' AND date(substr(deadline, 1, 10)) BETWEEN date('now', '+8 hours') AND date('now', '+8 hours', '+7 days') THEN 1 ELSE 0 END) AS dueSoon FROM jobs WHERE review_status <> 'hidden'`).get();
-  stats.uniqueTotal = db.prepare(`SELECT COUNT(DISTINCT ${GROUP_KEY_SQL}) AS total FROM jobs WHERE review_status <> 'hidden'`).get().total;
+    SUM(CASE WHEN deadline <> '' AND date(substr(deadline, 1, 10)) BETWEEN date('now', '+8 hours') AND date('now', '+8 hours', '+7 days') THEN 1 ELSE 0 END) AS dueSoon FROM jobs WHERE review_status <> 'hidden'${sourceFilter}`).get(...sourceParams);
+  stats.uniqueTotal = db.prepare(`SELECT COUNT(DISTINCT ${groupKeySql}) AS total FROM jobs WHERE review_status <> 'hidden'${sourceFilter}`).get(...sourceParams).total;
   const sourceRows = db.prepare(`WITH names AS (
       SELECT source FROM source_status WHERE last_status <> 'never'
       UNION SELECT source FROM jobs
