@@ -508,6 +508,25 @@ test("行业分类和行业筛选", async () => {
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 
+test("截止日期筛选和组合查询", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "campus-jobs-deadline-"));
+  const db = await openDatabase(join(dir, "test.db"));
+  try {
+    const now = new Date().toISOString();
+    const insert = db.prepare("INSERT INTO jobs (source, source_id, company, title, first_seen_at, last_seen_at, published_at, deadline, review_status, dedupe_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    const open = insert.run("北京航空航天大学", "deadline-a", "甲科技", "开放岗位", now, now, "2026-09-30", "2026-10-20", "pending", "deadline-a").lastInsertRowid;
+    const due = insert.run("北京航空航天大学", "deadline-b", "乙科技", "近期岗位", now, now, "2026-09-30", "2026-10-05", "pending", "deadline-b").lastInsertRowid;
+    const expired = insert.run("北京理工大学", "deadline-c", "丙科技", "过期岗位", now, now, "2026-09-30", "2026-09-01", "pending", "deadline-c").lastInsertRowid;
+    const unknown = insert.run("北京理工大学", "deadline-d", "丁科技", "无日期岗位", now, now, "2026-09-30", "", "pending", "deadline-d").lastInsertRowid;
+    db.prepare("INSERT INTO job_industries (job_id, industry) VALUES (?, ?), (?, ?), (?, ?), (?, ?)").run(open, "信息技术/互联网", due, "信息技术/互联网", expired, "信息技术/互联网", unknown, "信息技术/互联网");
+    assert.equal(listJobs(db, { deadline: "open", now: Date.parse("2026-09-30T00:00:00Z") }).matchCount, 2);
+    assert.equal(listJobs(db, { deadline: "due7", now: Date.parse("2026-09-30T00:00:00Z") }).jobs[0].sourceId, "deadline-b");
+    assert.equal(listJobs(db, { deadline: "expired", now: Date.parse("2026-09-30T00:00:00Z") }).jobs[0].sourceId, "deadline-c");
+    assert.equal(listJobs(db, { deadline: "unknown", industry: "信息技术/互联网", source: "北京理工大学", now: Date.parse("2026-09-30T00:00:00Z") }).matchCount, 1);
+    assert.throws(() => listJobs(db, { deadline: "bad" }), /未知截止日期筛选/);
+  } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
+});
+
 test("逐高校更新时间独立判断，不被其他高校成功更新掩盖", async () => {
   const dir = await mkdtemp(join(tmpdir(), "campus-jobs-source-view-"));
   const db = await openDatabase(join(dir, "test.db"));

@@ -6,14 +6,17 @@ const GROUP_KEY_SQL = `CASE WHEN dedupe_key <> '' AND EXISTS (
     AND peer.dedupe_key=jobs.dedupe_key AND peer.source<>jobs.source
 ) THEN dedupe_key ELSE 'record:row:' || jobs.id END`;
 
-export function listJobs(db, { q = "", source = "", city = "", industry = "", limit = 100, offset = 0, now = Date.now() } = {}) {
+export function listJobs(db, { q = "", source = "", city = "", industry = "", deadline = "", limit = 100, offset = 0, now = Date.now() } = {}) {
   const search = String(q).trim().slice(0, 200);
   const sourceName = String(source).trim().slice(0, 100);
   const cityName = String(city).trim().slice(0, 100);
   const industryName = String(industry).trim().slice(0, 100);
+  const deadlineName = String(deadline).trim().slice(0, 20);
+  const validDeadlineFilters = new Set(["", "open", "due7", "due30", "expired", "unknown"]);
   if (sourceName && !getSourceByName(sourceName)) throw new Error(`未知高校来源：${sourceName}`);
   if (cityName && !db.prepare("SELECT 1 FROM job_locations WHERE location=? LIMIT 1").get(cityName)) throw new Error(`未知工作城市：${cityName}`);
   if (industryName && !db.prepare("SELECT 1 FROM job_industries WHERE industry=? LIMIT 1").get(industryName)) throw new Error(`未知行业：${industryName}`);
+  if (!validDeadlineFilters.has(deadlineName)) throw new Error(`未知截止日期筛选：${deadlineName}`);
   const like = `%${search}%`;
   const sourceFilter = sourceName ? " AND source = ?" : "";
   const sourceParams = sourceName ? [sourceName] : [];
@@ -21,12 +24,23 @@ export function listJobs(db, { q = "", source = "", city = "", industry = "", li
   const cityParams = cityName ? [cityName] : [];
   const industryFilter = industryName ? " AND EXISTS (SELECT 1 FROM job_industries AS industry_filter WHERE industry_filter.job_id=jobs.id AND industry_filter.industry=?)" : "";
   const industryParams = industryName ? [industryName] : [];
+  const today = new Date(Number(now)).toISOString().slice(0, 10);
+  const deadlineSql = {
+    "": "",
+    open: " AND deadline <> '' AND date(substr(deadline, 1, 10)) >= date(?)",
+    due7: " AND deadline <> '' AND date(substr(deadline, 1, 10)) BETWEEN date(?) AND date(?, '+7 days')",
+    due30: " AND deadline <> '' AND date(substr(deadline, 1, 10)) BETWEEN date(?) AND date(?, '+30 days')",
+    expired: " AND deadline <> '' AND date(substr(deadline, 1, 10)) < date(?)",
+    unknown: " AND deadline = ''",
+  }[deadlineName];
+  const deadlineFilter = deadlineSql;
+  const deadlineParams = deadlineName === "due7" || deadlineName === "due30" ? [today, today] : ["open", "expired"].includes(deadlineName) ? [today] : [];
   const groupKeySql = sourceName ? "'record:row:' || jobs.id" : GROUP_KEY_SQL;
   const rows = db.prepare(`WITH normalized AS (
       SELECT id, source, source_id AS sourceId, company, title, job_type AS jobType, published_at AS publishedAt,
         deadline, recruiting_numbers AS recruitingNumbers, detail_url AS detailUrl, first_seen_at AS firstSeenAt,
         review_status AS reviewStatus, ${groupKeySql} AS groupKey
-      FROM jobs WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?)${sourceFilter}${cityFilter}${industryFilter}
+      FROM jobs WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?)${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}
     ), ranked AS (
       SELECT *, ROW_NUMBER() OVER (PARTITION BY groupKey ORDER BY
         CASE reviewStatus WHEN 'approved' THEN 0 ELSE 1 END, publishedAt DESC, id DESC) AS rank
@@ -34,13 +48,13 @@ export function listJobs(db, { q = "", source = "", city = "", industry = "", li
     )
     SELECT source, sourceId, company, title, jobType, publishedAt, deadline, recruitingNumbers,
       detailUrl, firstSeenAt, reviewStatus, groupKey
-    FROM ranked WHERE rank=1 ORDER BY publishedAt DESC, id DESC LIMIT ? OFFSET ?`).all(search, like, like, ...sourceParams, ...cityParams, ...industryParams, limit, offset);
+    FROM ranked WHERE rank=1 ORDER BY publishedAt DESC, id DESC LIMIT ? OFFSET ?`).all(search, like, like, ...sourceParams, ...cityParams, ...industryParams, ...deadlineParams, limit, offset);
   const matchCount = db.prepare(`SELECT COUNT(DISTINCT ${groupKeySql}) AS total FROM jobs
-    WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?)${sourceFilter}${cityFilter}${industryFilter}`).get(search, like, like, ...sourceParams, ...cityParams, ...industryParams).total;
+    WHERE review_status <> 'hidden' AND (? = '' OR company LIKE ? OR title LIKE ?)${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}`).get(search, like, like, ...sourceParams, ...cityParams, ...industryParams, ...deadlineParams).total;
   const memberRows = rows.length ? db.prepare(`SELECT source, source_id AS sourceId, published_at AS publishedAt,
       detail_url AS detailUrl, id AS jobId, ${groupKeySql} AS groupKey
-    FROM jobs WHERE review_status <> 'hidden' AND ${groupKeySql} IN (${rows.map(() => "?").join(",")})${sourceFilter}${cityFilter}${industryFilter}
-    ORDER BY published_at DESC, id DESC`).all(...rows.map((row) => row.groupKey), ...sourceParams, ...cityParams, ...industryParams) : [];
+    FROM jobs WHERE review_status <> 'hidden' AND ${groupKeySql} IN (${rows.map(() => "?").join(",")})${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}
+    ORDER BY published_at DESC, id DESC`).all(...rows.map((row) => row.groupKey), ...sourceParams, ...cityParams, ...industryParams, ...deadlineParams) : [];
   const locationRows = memberRows.length ? db.prepare(`SELECT job_id AS jobId, location FROM job_locations WHERE job_id IN (${memberRows.map(() => "?").join(",")}) ORDER BY location`).all(...memberRows.map((row) => row.jobId)) : [];
   const locationsByJob = new Map();
   for (const row of locationRows) locationsByJob.set(row.jobId, [...(locationsByJob.get(row.jobId) || []), row.location]);
@@ -70,8 +84,8 @@ export function listJobs(db, { q = "", source = "", city = "", industry = "", li
   });
   const stats = db.prepare(`SELECT COUNT(*) AS total, COUNT(DISTINCT source) AS sources,
     SUM(CASE WHEN date(first_seen_at, '+8 hours') = date('now', '+8 hours') THEN 1 ELSE 0 END) AS todayNew,
-    SUM(CASE WHEN deadline <> '' AND date(substr(deadline, 1, 10)) BETWEEN date('now', '+8 hours') AND date('now', '+8 hours', '+7 days') THEN 1 ELSE 0 END) AS dueSoon FROM jobs WHERE review_status <> 'hidden'${sourceFilter}${cityFilter}${industryFilter}`).get(...sourceParams, ...cityParams, ...industryParams);
-  stats.uniqueTotal = db.prepare(`SELECT COUNT(DISTINCT ${groupKeySql}) AS total FROM jobs WHERE review_status <> 'hidden'${sourceFilter}${cityFilter}${industryFilter}`).get(...sourceParams, ...cityParams, ...industryParams).total;
+    SUM(CASE WHEN deadline <> '' AND date(substr(deadline, 1, 10)) BETWEEN date('now', '+8 hours') AND date('now', '+8 hours', '+7 days') THEN 1 ELSE 0 END) AS dueSoon FROM jobs WHERE review_status <> 'hidden'${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}`).get(...sourceParams, ...cityParams, ...industryParams, ...deadlineParams);
+  stats.uniqueTotal = db.prepare(`SELECT COUNT(DISTINCT ${groupKeySql}) AS total FROM jobs WHERE review_status <> 'hidden'${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}`).get(...sourceParams, ...cityParams, ...industryParams, ...deadlineParams).total;
   const sourceRows = db.prepare(`WITH names AS (
       SELECT source FROM source_status WHERE last_status <> 'never'
       UNION SELECT source FROM jobs
