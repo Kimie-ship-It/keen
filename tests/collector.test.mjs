@@ -10,7 +10,7 @@ import { collectBit } from "../scripts/collect-bit.mjs";
 import { collectBjtu } from "../scripts/collect-bjtu.mjs";
 import { collectNankai, parseNankaiPage } from "../scripts/collect-nankai.mjs";
 import { normalizeItem, requestJson } from "../scripts/collection.mjs";
-import { getJobDetail, listJobs } from "../scripts/jobs-service.mjs";
+import { getJobDetail, getSavedJobs, listJobs } from "../scripts/jobs-service.mjs";
 import { checkAdminAuthorization, isAuthorized, listPendingReviews, readBearerToken, updateReview, validateReviewInput } from "../scripts/reviews.mjs";
 import { notify } from "../scripts/notify.mjs";
 import { parsePagination } from "../scripts/query.mjs";
@@ -545,6 +545,20 @@ test("招聘详情保留合并来源、地点、行业和官方链接", async ()
     assert.deepEqual(detail.industries, ["信息技术/互联网"]);
     assert.deepEqual(detail.sourceLinks.map((link) => link.source).sort(), ["北京理工大学", "北京航空航天大学"]);
     assert.equal(getJobDetail(db, { source: "未知大学", sourceId: "detail-a" }), null);
+    assert.equal(getSavedJobs(db, ["北京航空航天大学:detail-a", "无效键", "未知大学:x"]).length, 1);
+  } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("收藏导出按收藏键读取全部记录并忽略失效收藏", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "campus-jobs-export-"));
+  const db = await openDatabase(join(dir, "test.db"));
+  try {
+    const now = new Date().toISOString();
+    db.prepare("INSERT INTO jobs (source, source_id, company, title, first_seen_at, last_seen_at, detail_url, review_status, dedupe_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run("北京航空航天大学", "export-a", "甲公司", "可导出岗位", now, now, "https://career.buaa.edu.cn/f/a", "pending", "export-a");
+    const jobs = getSavedJobs(db, ["北京航空航天大学:export-a", "北京航空航天大学:missing", "bad-key"]);
+    assert.equal(jobs.length, 1);
+    assert.equal(jobs[0].savedKey, "北京航空航天大学:export-a");
+    assert.equal(jobs[0].sourceLinks[0].detailUrl, "https://career.buaa.edu.cn/f/a");
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 

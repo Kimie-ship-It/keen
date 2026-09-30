@@ -59,6 +59,18 @@ export function getJobDetail(db, { source, sourceId } = {}) {
   return hydrateJob(db, rows);
 }
 
+export function getSavedJobs(db, keys = []) {
+  const uniqueKeys = [...new Set(keys.map((key) => String(key || "").trim()).filter(Boolean))].slice(0, 500);
+  const jobs = [];
+  for (const key of uniqueKeys) {
+    const separator = key.indexOf(":");
+    if (separator < 1 || separator === key.length - 1) continue;
+    const job = getJobDetail(db, { source: key.slice(0, separator), sourceId: key.slice(separator + 1) });
+    if (job) jobs.push({ ...job, savedKey: key });
+  }
+  return jobs;
+}
+
 export function listJobs(db, { q = "", source = "", city = "", industry = "", deadline = "", limit = 100, offset = 0, now = Date.now() } = {}) {
   const search = String(q).trim().slice(0, 200);
   const sourceName = String(source).trim().slice(0, 100);

@@ -7,3 +7,5 @@
 @media(max-width:800px){.reviewActions{flex-wrap:wrap}}
 @media(max-width:800px){.freshnessNotice{align-items:flex-start;flex-wrap:wrap;margin-top:-12px}.freshnessNotice span{min-width:calc(100% - 28px)}.freshnessNotice strong{margin-left:25px}.searchPanel .filters{grid-template-columns:1fr}.searchPanel .filters select{width:100%}.sectionHead{display:block}.resultMeta{margin-top:8px;text-align:left;line-height:1.5}}
 .modalActions{flex-wrap:wrap}.duplicateNote{display:inline-block;margin-top:10px;color:#0e7775;font-size:10px;font-weight:700}
+.resultActions{display:flex;align-items:center;gap:12px}.resultActions .outlineButton{white-space:nowrap}
+@media(max-width:800px){.resultActions{display:block}.resultActions .outlineButton{margin-top:8px}}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bookmark, Clock3, ExternalLink, GraduationCap, LayoutDashboard, RefreshCw, Search, X } from "lucide-react";
+import { Bookmark, Clock3, Download, ExternalLink, GraduationCap, LayoutDashboard, RefreshCw, Search, X } from "lucide-react";
 import styles from "./page.module.css";
 
 type SourceLink = { source: string; sourceId: string; publishedAt: string; detailUrl: string };
@@ -76,6 +76,23 @@ export default function Home() {
   useEffect(() => { const timer = setTimeout(() => { void refresh(query, selectedSource, selectedCity, selectedIndustry, selectedDeadline, 0); }, 250); return () => clearTimeout(timer); }, [query, selectedSource, selectedCity, selectedIndustry, selectedDeadline, refresh]);
   useEffect(() => { if (ready) localStorage.setItem("campus-jobs:saved", JSON.stringify(saved)); }, [saved, ready]);
   const toggleSaved = (id: string) => setSaved((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
+  const exportSaved = async () => {
+    if (!saved.length) return;
+    try {
+      const response = await fetch(`/api/jobs/export?ids=${encodeURIComponent(saved.join(","))}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("导出收藏失败");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `校招雷达-收藏-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "导出收藏失败");
+    }
+  };
   const filtered = data.jobs;
   const latest = data.runs[0];
   const freshnessMessage = data.freshness.failedSources
@@ -122,7 +139,7 @@ export default function Home() {
             </select>
           </div>
         </section>
-        <div className={styles.sectionHead}><div><span className={styles.sectionKicker}>LATEST POSTS</span><h2>最新招聘</h2></div><div className={styles.resultMeta}>显示 {filtered.length} / {data.matchCount} 条，合并前 {data.stats.total} 条原始记录</div></div>
+        <div className={styles.sectionHead}><div><span className={styles.sectionKicker}>LATEST POSTS</span><h2>最新招聘</h2></div><div className={styles.resultActions}><div className={styles.resultMeta}>显示 {filtered.length} / {data.matchCount} 条，合并前 {data.stats.total} 条原始记录</div><button className={styles.outlineButton} onClick={() => void exportSaved()} disabled={!saved.length} title={saved.length ? "导出已收藏招聘" : "暂无收藏可导出"}><Download size={15} />导出收藏{saved.length ? `（${saved.length}）` : ""}</button></div></div>
         <section className={styles.jobList}>{filtered.map((job) => {
           const id = `${job.source}:${job.sourceId}`;
           const detailHref = `/jobs/${encodeURIComponent(job.source)}/${encodeURIComponent(job.sourceId)}`;
