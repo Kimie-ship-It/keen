@@ -5,6 +5,23 @@ export const SOURCES = Object.freeze({
     baseUrl: "https://career.buaa.edu.cn",
     officialHosts: Object.freeze(["career.buaa.edu.cn"]),
     collector: "buaa",
+    tokenPath: "/f/ajaxHome/getToken",
+    listPath: "/f/recruitmentinfo/ajax_frontRecruitinfoXzgg",
+    pageSize: 100,
+    maxPages: 100,
+    pageDelayMs: 250,
+  }),
+  bit: Object.freeze({
+    id: "bit",
+    name: "北京理工大学",
+    baseUrl: "https://job.bit.edu.cn",
+    officialHosts: Object.freeze(["job.bit.edu.cn"]),
+    collector: "bit",
+    tokenPath: "/f/ajaxHome/getToken",
+    listPath: "/f/recruitmentinfo/ajax_frontRecruitinfoXzgg",
+    pageSize: 100,
+    maxPages: 100,
+    pageDelayMs: 250,
   }),
 });
 

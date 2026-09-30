@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { execFileSync } from "node:child_process";
+import { SOURCES } from "./sources.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const name = process.argv.slice(2).join(" ").trim();
@@ -25,8 +26,14 @@ if (existsSync(dbPath)) {
   await db.backup(dbBackup);
   db.close();
 }
-const snapshot = join(root, "data", "buaa-recruitments.json");
-if (existsSync(snapshot)) await copyFile(snapshot, join(destination, "buaa-recruitments.json"));
+const snapshots = [];
+for (const id of Object.keys(SOURCES)) {
+  const snapshot = join(root, "data", `${id}-recruitments.json`);
+  if (!existsSync(snapshot)) continue;
+  const filename = `${id}-recruitments.json`;
+  await copyFile(snapshot, join(destination, filename));
+  snapshots.push(filename);
+}
 
 let commit = "未创建 Git 提交";
 try {
@@ -43,4 +50,4 @@ try {
 }
 
 await writeFile(join(destination, "manifest.json"), JSON.stringify({ createdAt: new Date().toISOString(), step: name, gitCommit: commit }, null, 2) + "\n");
-console.log(JSON.stringify({ destination, gitCommit: commit, database: existsSync(dbPath), snapshot: existsSync(snapshot) }, null, 2));
+console.log(JSON.stringify({ destination, gitCommit: commit, database: existsSync(dbPath), snapshots }, null, 2));

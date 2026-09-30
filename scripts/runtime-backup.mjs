@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DB_PATH } from "./db.mjs";
+import { SOURCES } from "./sources.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_BACKUP_ROOT = resolve(ROOT, "..", "campus-jobs-backups", "daily");
@@ -18,13 +19,14 @@ function backupName(date) {
   return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 }
 
-export async function createRuntimeBackup({
-  dbPath = DB_PATH,
-  snapshotPath = resolve(ROOT, "data", "buaa-recruitments.json"),
-  backupRoot = DEFAULT_BACKUP_ROOT,
-  retention = readRetention(process.env.BACKUP_RETENTION_COUNT),
-  now = new Date(),
-} = {}) {
+export async function createRuntimeBackup(options = {}) {
+  const dbPath = options.dbPath || DB_PATH;
+  const snapshotPaths = options.snapshotPaths || (options.snapshotPath
+    ? [options.snapshotPath]
+    : Object.keys(SOURCES).map((id) => resolve(ROOT, "data", `${id}-recruitments.json`)));
+  const backupRoot = options.backupRoot || DEFAULT_BACKUP_ROOT;
+  const retention = options.retention ?? readRetention(process.env.BACKUP_RETENTION_COUNT);
+  const now = options.now || new Date();
   if (!existsSync(dbPath)) throw new Error(`数据库不存在：${dbPath}`);
   const safeRoot = resolve(backupRoot);
   const destination = resolve(safeRoot, backupName(now));
@@ -34,8 +36,14 @@ export async function createRuntimeBackup({
   const targetDb = join(destination, "campus-jobs.db");
   const db = new Database(dbPath, { readonly: true });
   try { await db.backup(targetDb); } finally { db.close(); }
-  if (existsSync(snapshotPath)) await copyFile(snapshotPath, join(destination, "buaa-recruitments.json"));
-  await writeFile(join(destination, "manifest.json"), JSON.stringify({ createdAt: now.toISOString(), sourceDatabase: dbPath }, null, 2) + "\n");
+  const snapshots = [];
+  for (const snapshotPath of snapshotPaths) {
+    if (!existsSync(snapshotPath)) continue;
+    const filename = snapshotPath.split(/[\\/]/).at(-1);
+    await copyFile(snapshotPath, join(destination, filename));
+    snapshots.push(filename);
+  }
+  await writeFile(join(destination, "manifest.json"), JSON.stringify({ createdAt: now.toISOString(), sourceDatabase: dbPath, snapshots }, null, 2) + "\n");
 
   const entries = (await readdir(safeRoot, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory() && /^\d{8}T\d{6}Z$/.test(entry.name))

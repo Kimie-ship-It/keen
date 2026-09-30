@@ -6,18 +6,23 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { openDatabase, closeDatabase } from "../scripts/db.mjs";
 import { collectBuaa } from "../scripts/collect-buaa.mjs";
+import { collectBit } from "../scripts/collect-bit.mjs";
 import { normalizeItem, requestJson } from "../scripts/collection.mjs";
 import { listJobs } from "../scripts/jobs-service.mjs";
 import { checkAdminAuthorization, isAuthorized, listPendingReviews, readBearerToken, updateReview, validateReviewInput } from "../scripts/reviews.mjs";
 import { notify } from "../scripts/notify.mjs";
 import { parsePagination } from "../scripts/query.mjs";
 import { getSource, officialUrl, officialUrlForSourceName, SOURCES } from "../scripts/sources.mjs";
-import { collectSource } from "../scripts/collector-registry.mjs";
+import { collectConfiguredSources, collectSource } from "../scripts/collector-registry.mjs";
 import { refreshSourceStatus } from "../scripts/source-status.mjs";
 import { createDedupeKey } from "../scripts/dedupe.mjs";
 
 async function buaaFixture(name) {
   return JSON.parse(await readFile(new URL(`./fixtures/buaa/${name}.json`, import.meta.url), "utf8"));
+}
+
+async function bitFixture(name) {
+  return JSON.parse(await readFile(new URL(`./fixtures/bit/${name}.json`, import.meta.url), "utf8"));
 }
 
 function jsonResponse(payload) {
@@ -28,7 +33,11 @@ test("高校来源配置集中管理", () => {
   assert.equal(getSource("buaa").name, "北京航空航天大学");
   assert.equal(getSource("buaa").baseUrl, "https://career.buaa.edu.cn");
   assert.deepEqual(getSource("buaa").officialHosts, ["career.buaa.edu.cn"]);
-  assert.equal(Object.keys(SOURCES).length, 1);
+  assert.equal(getSource("bit").name, "北京理工大学");
+  assert.equal(getSource("bit").baseUrl, "https://job.bit.edu.cn");
+  assert.deepEqual(getSource("bit").officialHosts, ["job.bit.edu.cn"]);
+  assert.equal(getSource("bit").pageDelayMs, 250);
+  assert.equal(Object.keys(SOURCES).length, 2);
   assert.throws(() => getSource("unknown"), /未知高校来源/);
   assert.throws(() => getSource("constructor"), /未知高校来源/);
 });
@@ -38,6 +47,7 @@ test("来源官方域名白名单拒绝伪装链接", () => {
   assert.equal(officialUrl("buaa", relative), `https://career.buaa.edu.cn${relative}`);
   assert.equal(officialUrl("buaa", "http://career.buaa.edu.cn/f/test"), "https://career.buaa.edu.cn/f/test");
   assert.equal(officialUrlForSourceName("北京航空航天大学", relative), `https://career.buaa.edu.cn${relative}`);
+  assert.equal(officialUrl("bit", relative), `https://job.bit.edu.cn${relative}`);
   assert.equal(officialUrl("buaa", "https://career.buaa.edu.cn.evil.example/f/test"), "");
   assert.equal(officialUrl("buaa", "https://user@career.buaa.edu.cn/f/test"), "");
   assert.equal(officialUrl("buaa", "https://career.buaa.edu.cn:444/f/test"), "");
@@ -56,6 +66,15 @@ test("采集器接口按来源调度并校验结果", async () => {
   await assert.rejects(collectSource("buaa", {}, {}), /缺少采集器/);
   await assert.rejects(collectSource("buaa", {}, { buaa: async () => ({ ...result, count: 0 }) }), /格式异常/);
   await assert.rejects(collectSource("buaa", {}, { buaa: async () => { throw new Error("采集失败"); } }), /采集失败/);
+  const order = [];
+  const summary = await collectConfiguredSources({ ids: ["buaa", "bit"] }, {
+    buaa: async () => { order.push("buaa"); return result; },
+    bit: async () => { order.push("bit"); throw new Error("第二来源失败"); },
+  });
+  assert.deepEqual(order, ["buaa", "bit"]);
+  assert.equal(summary.results.length, 1);
+  assert.equal(summary.failures.length, 1);
+  assert.equal(summary.failures[0].source, "北京理工大学");
 });
 
 test("采集去重、审核状态保留、失败不丢数据", async () => {
@@ -63,21 +82,27 @@ test("采集去重、审核状态保留、失败不丢数据", async () => {
   const path = join(dir, "test.db");
   const token = await buaaFixture("token");
   const pages = { "1": await buaaFixture("page-1"), "2": await buaaFixture("page-2") };
-  const fakeFetch = async (url, options) => url.includes("getToken")
-    ? jsonResponse(token)
-    : jsonResponse(pages[options.body.get("pageNo")]);
+  const delays = [];
+  const fakeFetch = async (url, options) => {
+    if (url.includes("getToken")) return jsonResponse(token);
+    assert.equal(options.body.get("pageSize"), "100");
+    return jsonResponse(pages[options.body.get("pageNo")]);
+  };
   try {
-    const options = { dbPath: path, fetchImpl: fakeFetch, skipSnapshot: true, wait: async () => {} };
+    const options = { dbPath: path, fetchImpl: fakeFetch, skipSnapshot: true, wait: async (ms) => { delays.push(ms); } };
     const firstRun = await collectBuaa(options);
     assert.equal(firstRun.count, 2);
     assert.equal(firstRun.newCount, 2);
+    assert.deepEqual(delays, [250]);
     const db = await openDatabase(path);
     const firstSuccess = db.prepare("SELECT last_status AS status, last_success_at AS successAt, fetched_count AS fetchedCount FROM source_status WHERE source=?").get("北京航空航天大学");
     assert.equal(firstSuccess.status, "success");
     assert.equal(firstSuccess.fetchedCount, 2);
     db.prepare("UPDATE jobs SET review_status='approved' WHERE source_id='fixture-a'").run();
     closeDatabase(db);
+    delays.length = 0;
     assert.equal((await collectBuaa(options)).newCount, 0);
+    assert.deepEqual(delays, [250]);
     await assert.rejects(collectBuaa({ ...options, fetchImpl: async () => { throw new Error("network down"); } }), /network down/);
     const result = await openDatabase(path);
     assert.equal(result.prepare("SELECT COUNT(*) AS n FROM jobs").get().n, 2);
@@ -91,6 +116,53 @@ test("采集去重、审核状态保留、失败不丢数据", async () => {
     assert.ok(failedState.failureAt);
     assert.match(failedState.error, /network down/);
     closeDatabase(result);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("北京理工大学夹具覆盖字段映射、多校去重和失败保护", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "campus-jobs-bit-"));
+  const path = join(dir, "test.db");
+  const buaaToken = await buaaFixture("token");
+  const buaaPages = { "1": await buaaFixture("page-1"), "2": await buaaFixture("page-2") };
+  const bitToken = await bitFixture("token");
+  const bitPage = await bitFixture("page-1");
+  try {
+    await collectBuaa({
+      dbPath: path, skipSnapshot: true, wait: async () => {},
+      fetchImpl: async (url, options) => url.includes("getToken")
+        ? jsonResponse(buaaToken)
+        : jsonResponse(buaaPages[options.body.get("pageNo")]),
+    });
+    const result = await collectBit({
+      dbPath: path, skipSnapshot: true, wait: async () => {},
+      fetchImpl: async (url, options) => {
+        if (url.includes("getToken")) return jsonResponse(bitToken);
+        assert.equal(options.body.get("pageSize"), "100");
+        return jsonResponse(bitPage);
+      },
+    });
+    assert.equal(result.source, "北京理工大学");
+    assert.equal(result.count, 2);
+    assert.equal(result.newCount, 2);
+    const db = await openDatabase(path);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs").get().n, 4);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE source='北京理工大学'").get().n, 2);
+    assert.equal(db.prepare("SELECT detail_url FROM jobs WHERE source_id='bit-fixture-b'").get().detail_url, "https://job.bit.edu.cn/f/recruitmentinfo/show?recruitmentId=bit-fixture-b");
+    const publicData = listJobs(db);
+    assert.equal(publicData.matchCount, 3);
+    const merged = publicData.jobs.find((job) => job.company === "示例科技有限公司");
+    assert.equal(merged.sourceCount, 2);
+    assert.equal(merged.duplicateCount, 2);
+    assert.deepEqual(merged.sourceLinks.map((link) => link.source).sort(), ["北京理工大学", "北京航空航天大学"]);
+    closeDatabase(db);
+    await assert.rejects(collectBit({
+      dbPath: path, skipSnapshot: true, wait: async () => {},
+      fetchImpl: async () => { throw new Error("bit network down"); },
+    }), /bit network down/);
+    const afterFailure = await openDatabase(path);
+    assert.equal(afterFailure.prepare("SELECT COUNT(*) AS n FROM jobs").get().n, 4);
+    assert.equal(afterFailure.prepare("SELECT last_status FROM source_status WHERE source='北京理工大学'").get().last_status, "failed");
+    closeDatabase(afterFailure);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -113,10 +185,10 @@ test("旧数据库的高校运行记录补入来源状态表", async () => {
     assert.equal(status.last_success_at, "2026-09-29T00:01:00Z");
     assert.equal(status.last_failure_at, "2026-09-30T00:01:00Z");
     assert.equal(status.last_error, "旧错误详情");
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM source_status").get().count, 1);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM source_status").get().count, 2);
     closeDatabase(db);
     const reopened = await openDatabase(path);
-    assert.equal(reopened.prepare("SELECT COUNT(*) AS count FROM source_status").get().count, 1);
+    assert.equal(reopened.prepare("SELECT COUNT(*) AS count FROM source_status").get().count, 2);
     closeDatabase(reopened);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
@@ -133,7 +205,9 @@ test("超时重试、非重试 HTTP 错误和恶意链接夹具", async () => {
   await assert.rejects(requestJson("https://career.buaa.edu.cn/test", {}, { fetchImpl: async () => { calls++; return { ok: false, status: 403 }; }, wait: async () => {} }), /403/);
   assert.equal(calls, 1);
   const malicious = await buaaFixture("malicious-link");
-  assert.throws(() => normalizeItem(malicious.object.list[0], new Date().toISOString()), /不合法/);
+  const normalized = normalizeItem("buaa", malicious.object.list[0], new Date().toISOString());
+  assert.equal(normalized.detailUrl, `https://career.buaa.edu.cn/f/recruitmentinfo/show?recruitmentId=${malicious.object.list[0].id}`);
+  assert.equal(normalized.detailUrl.includes("evil.example"), false);
 });
 
 test("空列表和分页中途失败不写入半成品", async () => {

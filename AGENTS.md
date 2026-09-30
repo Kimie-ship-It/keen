@@ -12,13 +12,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Positioning
 
-This is a local prototype that aggregates public university recruitment notices. It currently supports Beijing University of Aeronautics and Astronautics only; do not describe it as a live nationwide service.
+This is a local prototype that aggregates public university recruitment notices. It currently supports Beijing University of Aeronautics and Astronautics and Beijing Institute of Technology; do not describe it as a live nationwide service.
 
 ## Run And Verify
 
 - Install/setup: `npm install`, then `npm run setup:local`.
 - Develop: `npm run dev` and open `http://localhost:3000`.
-- Collect: `npm run collect:buaa`; install the Windows daily task with `npm run schedule:install`.
+- Collect one source with `npm run collect:buaa` or `npm run collect:bit`; run all configured sources with `npm run collect:daily`; install the Windows daily task with `npm run schedule:install`.
 - Required checks after code changes: `npm test`, `npm run lint`, and `npm run build`.
 
 ## Stack
@@ -36,4 +36,4 @@ Next.js 16 App Router, React 19, TypeScript/JavaScript, SQLite through `better-s
 
 ## Current Status And Next Step
 
-Local database/API/UI, one BUAA collector, review controls, and a Windows daily task are implemented. Feishu delivery is optional and is not considered live until a real webhook is configured and verified. Next, add a shared collector contract and onboard more universities gradually before any production deployment.
+Local database/API/UI, BUAA and BIT collectors, review controls, multi-source backups, and a Windows daily task are implemented. Feishu delivery is optional and is not considered live until a real webhook is configured and verified. Next, onboard the third pilot university and continue expanding gradually before any production deployment.
