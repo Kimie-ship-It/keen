@@ -2,6 +2,8 @@
 
 ## 2026-09-30
 
+- 完成本地备份导入与线上核对：将 `campus-jobs-import` 中剩余的 `source_status.csv`（4 条）和 `admin_auth_limits.csv`（1 条）导入 Supabase 测试项目；SQL 核对七张表结果为 `jobs 4882`、`job_locations 13761`、`job_industries 9714`、`source_runs 26`、`source_status 4`、`review_events 0`、`admin_auth_limits 1`，与本地 CSV 备份一致。下一步改为配置后台定时任务。
+
 - 建立正式 Git 远程仓库并完成双向状态核对：远程地址为 `https://github.com/Kimie-ship-It/keen.git`，本地 `master` 跟踪 `origin/master`，`git ls-remote origin` 与本地提交 `907d18c` 一致；`.env.local`、数据库、采集快照和本地备份均未进入远程仓库。线上部署准备的下一步改为选择线上数据库。
 - 完成线上数据库选型：确定后续使用 Supabase PostgreSQL，记录 serverless 连接边界、免费计划限制以及从本地 SQLite 分阶段迁移的顺序；尚未创建线上项目或写入数据库密钥。下一步改为配置后台定时任务。
 - 根据线上采集持久化要求补充 Supabase 初始迁移脚本：覆盖招聘、地点、行业、来源运行、来源状态、审核日志和管理限速表及索引；当前仍保留本地 SQLite，待测试项目导入并完成适配验证后再配置云端定时任务。
