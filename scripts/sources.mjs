@@ -23,6 +23,18 @@ export const SOURCES = Object.freeze({
     maxPages: 100,
     pageDelayMs: 250,
   }),
+  bjtu: Object.freeze({
+    id: "bjtu",
+    name: "北京交通大学",
+    baseUrl: "https://job.bjtu.edu.cn",
+    officialHosts: Object.freeze(["job.bjtu.edu.cn"]),
+    collector: "bjtu",
+    tokenPath: "/f/ajaxHome/getToken",
+    listPath: "/f/recruitmentinfo/ajax_frontRecruitinfo",
+    pageSize: 100,
+    maxPages: 100,
+    pageDelayMs: 250,
+  }),
 });
 
 const SOURCES_BY_NAME = new Map(Object.values(SOURCES).map((source) => [source.name, source]));

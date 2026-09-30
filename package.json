@@ -9,6 +9,7 @@
     "lint": "eslint",
     "collect:buaa": "node scripts/collect-buaa.mjs",
     "collect:bit": "node scripts/collect-bit.mjs",
+    "collect:bjtu": "node scripts/collect-bjtu.mjs",
     "collect:watch": "node scripts/schedule-collector.mjs",
     "collect:daily": "node scripts/collect-daily.mjs",
     "backup:data": "node scripts/runtime-backup.mjs",

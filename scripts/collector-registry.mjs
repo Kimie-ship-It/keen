@@ -1,8 +1,9 @@
 import { collectBuaa } from "./collect-buaa.mjs";
 import { collectBit } from "./collect-bit.mjs";
+import { collectBjtu } from "./collect-bjtu.mjs";
 import { getSource, SOURCES } from "./sources.mjs";
 
-const collectors = Object.freeze({ buaa: collectBuaa, bit: collectBit });
+const collectors = Object.freeze({ buaa: collectBuaa, bit: collectBit, bjtu: collectBjtu });
 
 export async function collectSource(id, options = {}, adapters = collectors) {
   const source = getSource(id);

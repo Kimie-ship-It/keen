@@ -1,0 +1,28 @@
+{
+  "state": 1,
+  "object": {
+    "totalPage": 1,
+    "list": [
+      {
+        "id": "bjtu-fixture-a",
+        "title": "示例科技2027届校园招聘",
+        "corporationName": "示例科技有限公司",
+        "positionType": "全职",
+        "startTime": "2026-09-29 12:00:00",
+        "endTime": "2026-10-31",
+        "recruitingNumbers": 18,
+        "detailsUrl": "/f/recruitmentinfo/show?recruitmentId=bjtu-fixture-a"
+      },
+      {
+        "id": "bjtu-fixture-b",
+        "title": "北京交通大学独立招聘样本",
+        "corporationName": "交通科技有限公司",
+        "positionType": "全职",
+        "startTime": "2026-09-29 11:30:00",
+        "endTime": "2026-12-31",
+        "recruitingNumbers": 10,
+        "detailsUrl": "/f/recruitmentinfo/show?recruitmentId=bjtu-fixture-b"
+      }
+    ]
+  }
+}
