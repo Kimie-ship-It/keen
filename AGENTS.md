@@ -36,4 +36,4 @@ Next.js 16 App Router, React 19, TypeScript/JavaScript, SQLite through `better-s
 
 ## Current Status And Next Step
 
-Local database/API/UI, BUAA, BIT, BJTU, and Nankai collectors, review controls, multi-source backups, a Windows daily task, and server-side university filtering are implemented. Feishu setup and test commands exist, but delivery is not live until a real group webhook is configured and received. The fifth pilot university is canceled for this phase. Next, implement city filtering before any production deployment.
+Local database/API/UI, BUAA, BIT, BJTU, and Nankai collectors, review controls, multi-source backups, a Windows daily task, and server-side university and city filtering are implemented. Feishu setup and test commands exist, but delivery is not live until a real group webhook is configured and received. The fifth pilot university is canceled for this phase. Next, implement industry filtering before any production deployment.

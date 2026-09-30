@@ -31,6 +31,12 @@ export async function openDatabase(path = DB_PATH) {
       last_seen_at TEXT NOT NULL,
       UNIQUE(source, source_id)
     );
+    CREATE TABLE IF NOT EXISTS job_locations (
+      job_id INTEGER NOT NULL,
+      location TEXT NOT NULL,
+      PRIMARY KEY (job_id, location),
+      FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS source_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       source TEXT NOT NULL,
@@ -70,6 +76,7 @@ export async function openDatabase(path = DB_PATH) {
   const columns = db.pragma("table_info(jobs)").map((column) => column.name);
   if (!columns.includes("review_status")) db.exec("ALTER TABLE jobs ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'");
   if (!columns.includes("dedupe_key")) db.exec("ALTER TABLE jobs ADD COLUMN dedupe_key TEXT NOT NULL DEFAULT ''");
+  if (!columns.includes("location_checked_at")) db.exec("ALTER TABLE jobs ADD COLUMN location_checked_at TEXT NOT NULL DEFAULT ''");
   const missingDedupeKeys = db.prepare("SELECT id, source, source_id AS sourceId, company, title FROM jobs WHERE dedupe_key='' OR dedupe_key IS NULL").all();
   if (missingDedupeKeys.length) {
     const updateDedupeKey = db.prepare("UPDATE jobs SET dedupe_key=? WHERE id=?");
@@ -77,7 +84,7 @@ export async function openDatabase(path = DB_PATH) {
       for (const row of missingDedupeKeys) updateDedupeKey.run(createDedupeKey(row), row.id);
     })();
   }
-  db.exec("CREATE INDEX IF NOT EXISTS idx_jobs_published ON jobs(published_at); CREATE INDEX IF NOT EXISTS idx_jobs_dedupe ON jobs(dedupe_key); CREATE INDEX IF NOT EXISTS idx_runs_source ON source_runs(source, id); CREATE INDEX IF NOT EXISTS idx_review_events_id ON review_events(id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_jobs_published ON jobs(published_at); CREATE INDEX IF NOT EXISTS idx_jobs_dedupe ON jobs(dedupe_key); CREATE INDEX IF NOT EXISTS idx_runs_source ON source_runs(source, id); CREATE INDEX IF NOT EXISTS idx_review_events_id ON review_events(id); CREATE INDEX IF NOT EXISTS idx_job_locations_location ON job_locations(location, job_id)");
   db.transaction(() => {
     const seed = db.prepare("INSERT OR IGNORE INTO source_status (source) VALUES (?)");
     for (const source of Object.values(SOURCES)) seed.run(source.name);

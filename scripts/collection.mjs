@@ -59,7 +59,8 @@ export function saveRows(db, sourceId, rows) {
     VALUES (@source, @sourceId, @company, @title, @jobType, @publishedAt, @deadline, @recruitingNumbers, @detailUrl, @dedupeKey, @fetchedAt, @fetchedAt)
     ON CONFLICT(source, source_id) DO UPDATE SET company=excluded.company, title=excluded.title, job_type=excluded.job_type,
     published_at=excluded.published_at, deadline=excluded.deadline, recruiting_numbers=excluded.recruiting_numbers,
-    detail_url=excluded.detail_url, dedupe_key=excluded.dedupe_key, last_seen_at=excluded.last_seen_at`);
+    detail_url=excluded.detail_url, dedupe_key=excluded.dedupe_key, last_seen_at=excluded.last_seen_at,
+    location_checked_at=CASE WHEN excluded.title<>jobs.title OR excluded.published_at<>jobs.published_at THEN '' ELSE jobs.location_checked_at END`);
   return db.transaction(() => {
     const ids = new Set(db.prepare("SELECT source_id FROM jobs WHERE source=?").all(source.name).map((row) => row.source_id));
     let newCount = 0;

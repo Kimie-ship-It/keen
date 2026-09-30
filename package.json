@@ -13,6 +13,7 @@
     "collect:nankai": "node scripts/collect-nankai.mjs",
     "collect:watch": "node scripts/schedule-collector.mjs",
     "collect:daily": "node scripts/collect-daily.mjs",
+    "enrich:locations": "node scripts/enrich-locations.mjs",
     "backup:data": "node scripts/runtime-backup.mjs",
     "backup:verify": "node scripts/verify-backup.mjs",
     "backup:step": "node scripts/backup-step.mjs",

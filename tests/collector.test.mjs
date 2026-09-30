@@ -18,6 +18,7 @@ import { getSource, officialUrl, officialUrlForSourceName, SOURCES } from "../sc
 import { collectConfiguredSources, collectSource } from "../scripts/collector-registry.mjs";
 import { refreshSourceStatus } from "../scripts/source-status.mjs";
 import { createDedupeKey } from "../scripts/dedupe.mjs";
+import { extractLocations, normalizeLocation } from "../scripts/locations.mjs";
 
 async function buaaFixture(name) {
   return JSON.parse(await readFile(new URL(`./fixtures/buaa/${name}.json`, import.meta.url), "utf8"));
@@ -454,6 +455,36 @@ test("查询隐藏过滤、搜索、分页和空列表", async () => {
     assert.equal(listJobs(db, { q: "乙公司" }).jobs[0].sourceId, "2");
     assert.deepEqual(listJobs(db, { q: "不存在" }).jobs, []);
     assert.equal(listJobs(db, { offset: 1 }).jobs[0].sourceId, "2");
+  } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("工作地点提取和城市筛选", async () => {
+  assert.equal(normalizeLocation("北京市"), "北京");
+  assert.deepEqual(extractLocations({
+    content: "三、招聘岗位 工作地点：北京/广东/江苏/山东/重庆等 工作内容：参与项目管理",
+    reference: ["北京市", "广东省", "江苏省", "山东省", "重庆市"],
+  }), ["北京", "广东", "江苏", "山东", "重庆"]);
+  assert.deepEqual(extractLocations({
+    structured: ["北京市,天津市,河北省"],
+    reference: ["北京市", "天津市", "河北省"],
+  }), ["北京", "天津", "河北"]);
+
+  const dir = await mkdtemp(join(tmpdir(), "campus-jobs-location-"));
+  const db = await openDatabase(join(dir, "test.db"));
+  try {
+    const now = new Date().toISOString();
+    const insert = db.prepare("INSERT INTO jobs (source, source_id, company, title, first_seen_at, last_seen_at, published_at, review_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    const a = insert.run("北京航空航天大学", "city-a", "甲公司", "北京岗位", now, now, "2026-09-30", "pending").lastInsertRowid;
+    const b = insert.run("北京理工大学", "city-b", "乙公司", "上海岗位", now, now, "2026-09-29", "pending").lastInsertRowid;
+    db.prepare("INSERT INTO job_locations (job_id, location) VALUES (?, ?), (?, ?)").run(a, "北京", b, "上海");
+    const beijing = listJobs(db, { city: "北京" });
+    assert.equal(beijing.matchCount, 1);
+    assert.equal(beijing.stats.total, 1);
+    assert.equal(beijing.stats.uniqueTotal, 1);
+    assert.equal(beijing.jobs[0].source, "北京航空航天大学");
+    assert.deepEqual(beijing.jobs[0].locations, ["北京"]);
+    assert.equal(listJobs(db, { city: "北京", source: "北京航空航天大学", q: "北京岗位" }).jobs.length, 1);
+    assert.throws(() => listJobs(db, { city: "不存在城市" }), /未知工作城市/);
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 
