@@ -8,6 +8,7 @@ import { openDatabase, closeDatabase } from "../scripts/db.mjs";
 import { collectBuaa } from "../scripts/collect-buaa.mjs";
 import { collectBit } from "../scripts/collect-bit.mjs";
 import { collectBjtu } from "../scripts/collect-bjtu.mjs";
+import { collectNankai, parseNankaiPage } from "../scripts/collect-nankai.mjs";
 import { normalizeItem, requestJson } from "../scripts/collection.mjs";
 import { listJobs } from "../scripts/jobs-service.mjs";
 import { checkAdminAuthorization, isAuthorized, listPendingReviews, readBearerToken, updateReview, validateReviewInput } from "../scripts/reviews.mjs";
@@ -30,8 +31,16 @@ async function bjtuFixture(name) {
   return JSON.parse(await readFile(new URL(`./fixtures/bjtu/${name}.json`, import.meta.url), "utf8"));
 }
 
+async function nankaiFixture(name) {
+  return readFile(new URL(`./fixtures/nankai/${name}.html`, import.meta.url), "utf8");
+}
+
 function jsonResponse(payload) {
   return { ok: true, json: async () => structuredClone(payload) };
+}
+
+function textResponse(payload) {
+  return { ok: true, text: async () => payload };
 }
 
 test("高校来源配置集中管理", () => {
@@ -46,7 +55,11 @@ test("高校来源配置集中管理", () => {
   assert.equal(getSource("bjtu").baseUrl, "https://job.bjtu.edu.cn");
   assert.equal(getSource("bjtu").listPath, "/f/recruitmentinfo/ajax_frontRecruitinfo");
   assert.deepEqual(getSource("bjtu").officialHosts, ["job.bjtu.edu.cn"]);
-  assert.equal(Object.keys(SOURCES).length, 3);
+  assert.equal(getSource("nankai").name, "南开大学");
+  assert.equal(getSource("nankai").baseUrl, "https://career.nankai.edu.cn");
+  assert.equal(getSource("nankai").listPath, "/correcruit/index.html");
+  assert.deepEqual(getSource("nankai").officialHosts, ["career.nankai.edu.cn"]);
+  assert.equal(Object.keys(SOURCES).length, 4);
   assert.throws(() => getSource("unknown"), /未知高校来源/);
   assert.throws(() => getSource("constructor"), /未知高校来源/);
 });
@@ -58,6 +71,7 @@ test("来源官方域名白名单拒绝伪装链接", () => {
   assert.equal(officialUrlForSourceName("北京航空航天大学", relative), `https://career.buaa.edu.cn${relative}`);
   assert.equal(officialUrl("bit", relative), `https://job.bit.edu.cn${relative}`);
   assert.equal(officialUrl("bjtu", relative), `https://job.bjtu.edu.cn${relative}`);
+  assert.equal(officialUrl("nankai", "/correcruit/content/id/1.html"), "https://career.nankai.edu.cn/correcruit/content/id/1.html");
   assert.equal(officialUrl("buaa", "https://career.buaa.edu.cn.evil.example/f/test"), "");
   assert.equal(officialUrl("buaa", "https://user@career.buaa.edu.cn/f/test"), "");
   assert.equal(officialUrl("buaa", "https://career.buaa.edu.cn:444/f/test"), "");
@@ -77,13 +91,14 @@ test("采集器接口按来源调度并校验结果", async () => {
   await assert.rejects(collectSource("buaa", {}, { buaa: async () => ({ ...result, count: 0 }) }), /格式异常/);
   await assert.rejects(collectSource("buaa", {}, { buaa: async () => { throw new Error("采集失败"); } }), /采集失败/);
   const order = [];
-  const summary = await collectConfiguredSources({ ids: ["buaa", "bit", "bjtu"] }, {
+  const summary = await collectConfiguredSources({ ids: ["buaa", "bit", "bjtu", "nankai"] }, {
     buaa: async () => { order.push("buaa"); return result; },
     bit: async () => { order.push("bit"); throw new Error("第二来源失败"); },
     bjtu: async () => { order.push("bjtu"); return { ...result, source: "北京交通大学" }; },
+    nankai: async () => { order.push("nankai"); return { ...result, source: "南开大学" }; },
   });
-  assert.deepEqual(order, ["buaa", "bit", "bjtu"]);
-  assert.equal(summary.results.length, 2);
+  assert.deepEqual(order, ["buaa", "bit", "bjtu", "nankai"]);
+  assert.equal(summary.results.length, 3);
   assert.equal(summary.failures.length, 1);
   assert.equal(summary.failures[0].source, "北京理工大学");
 });
@@ -224,6 +239,55 @@ test("北京交通大学夹具覆盖独立接口、字段映射、去重和失�
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test("南开大学 HTML 夹具覆盖分页解析、字段映射、去重和失败保护", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "campus-jobs-nankai-"));
+  const path = join(dir, "test.db");
+  const buaaToken = await buaaFixture("token");
+  const buaaPages = { "1": await buaaFixture("page-1"), "2": await buaaFixture("page-2") };
+  const page1 = await nankaiFixture("page-1");
+  const page2 = await nankaiFixture("page-2");
+  const parsed = parseNankaiPage(page1, "2026-09-30T00:00:00Z");
+  assert.equal(parsed.totalPage, 2);
+  assert.equal(parsed.rows[0].company, "示例科技有限公司");
+  assert.equal(parsed.rows[0].publishedAt, "2026-09-29");
+  assert.equal(parsed.rows[0].detailUrl, "https://career.nankai.edu.cn/correcruit/content/id/2001.html");
+  const delays = [];
+  try {
+    await collectBuaa({
+      dbPath: path, skipSnapshot: true, wait: async () => {},
+      fetchImpl: async (url, options) => url.includes("getToken")
+        ? jsonResponse(buaaToken)
+        : jsonResponse(buaaPages[options.body.get("pageNo")]),
+    });
+    const result = await collectNankai({
+      dbPath: path, skipSnapshot: true, wait: async (ms) => { delays.push(ms); },
+      fetchImpl: async (url) => textResponse(url.endsWith("/correcruit/index.html") ? page1 : page2),
+    });
+    assert.equal(result.source, "南开大学");
+    assert.equal(result.count, 2);
+    assert.equal(result.newCount, 2);
+    assert.deepEqual(delays, [250]);
+    const db = await openDatabase(path);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs").get().n, 4);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE source='南开大学'").get().n, 2);
+    assert.equal(db.prepare("SELECT detail_url FROM jobs WHERE source_id='2002'").get().detail_url, "https://career.nankai.edu.cn/correcruit/content/id/2002.html");
+    const publicData = listJobs(db);
+    assert.equal(publicData.matchCount, 3);
+    const merged = publicData.jobs.find((job) => job.company === "示例科技有限公司");
+    assert.equal(merged.sourceCount, 2);
+    assert.deepEqual(merged.sourceLinks.map((link) => link.source).sort(), ["北京航空航天大学", "南开大学"]);
+    closeDatabase(db);
+    await assert.rejects(collectNankai({
+      dbPath: path, skipSnapshot: true, wait: async () => {},
+      fetchImpl: async () => { throw new Error("nankai network down"); },
+    }), /nankai network down/);
+    const afterFailure = await openDatabase(path);
+    assert.equal(afterFailure.prepare("SELECT COUNT(*) AS n FROM jobs").get().n, 4);
+    assert.equal(afterFailure.prepare("SELECT last_status FROM source_status WHERE source='南开大学'").get().last_status, "failed");
+    closeDatabase(afterFailure);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test("旧数据库的高校运行记录补入来源状态表", async () => {
   const dir = await mkdtemp(join(tmpdir(), "campus-jobs-migration-"));
   const path = join(dir, "legacy.db");
@@ -243,10 +307,10 @@ test("旧数据库的高校运行记录补入来源状态表", async () => {
     assert.equal(status.last_success_at, "2026-09-29T00:01:00Z");
     assert.equal(status.last_failure_at, "2026-09-30T00:01:00Z");
     assert.equal(status.last_error, "旧错误详情");
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM source_status").get().count, 3);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM source_status").get().count, 4);
     closeDatabase(db);
     const reopened = await openDatabase(path);
-    assert.equal(reopened.prepare("SELECT COUNT(*) AS count FROM source_status").get().count, 3);
+    assert.equal(reopened.prepare("SELECT COUNT(*) AS count FROM source_status").get().count, 4);
     closeDatabase(reopened);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

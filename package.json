@@ -10,6 +10,7 @@
     "collect:buaa": "node scripts/collect-buaa.mjs",
     "collect:bit": "node scripts/collect-bit.mjs",
     "collect:bjtu": "node scripts/collect-bjtu.mjs",
+    "collect:nankai": "node scripts/collect-nankai.mjs",
     "collect:watch": "node scripts/schedule-collector.mjs",
     "collect:daily": "node scripts/collect-daily.mjs",
     "backup:data": "node scripts/runtime-backup.mjs",
@@ -17,10 +18,13 @@
     "backup:step": "node scripts/backup-step.mjs",
     "schedule:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-daily.ps1",
     "test": "node --test tests/*.test.mjs",
-    "setup:local": "node scripts/setup-local.mjs"
+    "setup:local": "node scripts/setup-local.mjs",
+    "setup:feishu": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-feishu.ps1",
+    "test:feishu": "node scripts/test-feishu.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
+    "cheerio": "1.2.0",
     "lucide-react": "^1.48.0",
     "next": "16.3.6",
     "react": "19.2.8",

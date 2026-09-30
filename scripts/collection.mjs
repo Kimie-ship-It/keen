@@ -3,7 +3,7 @@ import { createDedupeKey } from "./dedupe.mjs";
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function requestJson(url, options = {}, settings = {}) {
+async function request(url, options, settings, read) {
   const { fetchImpl = fetch, wait = sleep, timeout = 15000, retries = 3 } = settings;
   let lastError;
   for (let attempt = 0; attempt < retries; attempt += 1) {
@@ -16,7 +16,7 @@ export async function requestJson(url, options = {}, settings = {}) {
         error.retryable = response.status === 429 || response.status >= 500;
         throw error;
       }
-      return await response.json();
+      return await read(response);
     } catch (error) {
       lastError = error;
       if (error.retryable === false || attempt + 1 === retries) break;
@@ -24,6 +24,14 @@ export async function requestJson(url, options = {}, settings = {}) {
     } finally { clearTimeout(timer); }
   }
   throw lastError;
+}
+
+export function requestJson(url, options = {}, settings = {}) {
+  return request(url, options, settings, (response) => response.json());
+}
+
+export function requestText(url, options = {}, settings = {}) {
+  return request(url, options, settings, (response) => response.text());
 }
 
 export function normalizeItem(sourceId, item, now) {

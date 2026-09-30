@@ -35,6 +35,17 @@ export const SOURCES = Object.freeze({
     maxPages: 100,
     pageDelayMs: 250,
   }),
+  nankai: Object.freeze({
+    id: "nankai",
+    name: "南开大学",
+    baseUrl: "https://career.nankai.edu.cn",
+    officialHosts: Object.freeze(["career.nankai.edu.cn"]),
+    collector: "nankai",
+    listPath: "/correcruit/index.html",
+    pageSize: 20,
+    maxPages: 50,
+    pageDelayMs: 250,
+  }),
 });
 
 const SOURCES_BY_NAME = new Map(Object.values(SOURCES).map((source) => [source.name, source]));
