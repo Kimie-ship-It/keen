@@ -78,3 +78,10 @@ create index if not exists idx_review_events_id on review_events (id);
 create index if not exists idx_job_locations_location on job_locations (location, job_id);
 create index if not exists idx_job_industries_industry on job_industries (industry, job_id);
 
+alter table jobs enable row level security;
+alter table job_locations enable row level security;
+alter table job_industries enable row level security;
+alter table source_runs enable row level security;
+alter table source_status enable row level security;
+alter table review_events enable row level security;
+alter table admin_auth_limits enable row level security;
