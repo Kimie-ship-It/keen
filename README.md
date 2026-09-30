@@ -135,4 +135,4 @@ npm run build
 
 ## 下一阶段
 
-当前已建立正式 Git 远程仓库 `https://github.com/Kimie-ship-It/keen.git`，并验证本地 `master` 与 GitHub `origin/master` 指向同一提交。第五所试点高校接入已按当前阶段安排取消，真实飞书机器人送达验证仍需用户之后创建机器人并提供本机配置时再执行。下一步是选择线上数据库；上线前还需要后台定时任务、访问日志、备份恢复、隐私说明和高校来源下架机制。
+当前已建立正式 Git 远程仓库 `https://github.com/Kimie-ship-It/keen.git`，并验证本地 `master` 与 GitHub `origin/master` 指向同一提交。线上数据库已选定为 Supabase PostgreSQL，详细迁移边界见 `docs/ONLINE-DATABASE-DECISION.md`；当前尚未创建线上项目或写入密钥。第五所试点高校接入已按当前阶段安排取消，真实飞书机器人送达验证仍需用户之后创建机器人并提供本机配置时再执行。下一步是配置后台定时任务；上线前还需要访问日志、备份恢复、隐私说明和高校来源下架机制。
