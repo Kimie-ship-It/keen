@@ -21,6 +21,7 @@
     "backup:verify": "node scripts/verify-backup.mjs",
     "backup:step": "node scripts/backup-step.mjs",
     "setup:backup": "node scripts/setup-backup.mjs",
+    "backup:key": "pwsh -NoProfile -STA -File scripts/backup-key-dialog.ps1",
     "backup:supabase": "node scripts/supabase-backup.mjs",
     "backup:supabase:verify": "node scripts/supabase-backup.mjs --verify",
     "restore:supabase": "node scripts/supabase-restore.mjs",

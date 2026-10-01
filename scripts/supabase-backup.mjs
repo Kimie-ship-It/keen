@@ -256,9 +256,9 @@ export async function restoreEmptyTarget(client, snapshot, { schema = "public" }
   }
 }
 
-export async function verifyCloudBackup(path) {
+export async function verifyCloudBackup(path, { key = process.env.SUPABASE_BACKUP_KEY } = {}) {
   const selected = path || await latestCloudBackup();
-  const snapshot = await readBackup(selected);
+  const snapshot = await readBackup(selected, key);
   const pool = createPostgresPool();
   let client;
   try {
