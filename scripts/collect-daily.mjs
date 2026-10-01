@@ -4,13 +4,14 @@ import { notify } from "./notify.mjs";
 import { createRuntimeBackup } from "./runtime-backup.mjs";
 import { syncLocalToSupabase } from "./supabase-sync.mjs";
 import { createCloudBackup } from "./supabase-backup.mjs";
+import { uploadEncryptedBackup } from "./offsite-backup.mjs";
 import { reportError } from "./monitor.mjs";
 import { checkHealth } from "./monitor-health.mjs";
 import { closeRuntimePool } from "./runtime-db.mjs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export async function runDaily({ collect = collectConfiguredSources, backupLocal = createRuntimeBackup, sync = syncLocalToSupabase, backupCloud = createCloudBackup, report = reportError, health = checkHealth, send = notify, log = console.log, env = process.env } = {}) {
+export async function runDaily({ collect = collectConfiguredSources, backupLocal = createRuntimeBackup, sync = syncLocalToSupabase, backupCloud = createCloudBackup, uploadOffsite = uploadEncryptedBackup, report = reportError, health = checkHealth, send = notify, log = console.log, env = process.env } = {}) {
   const failures = [];
   const record = async (error, operation, source) => {
     const event = await report(error, { operation, source });
@@ -24,6 +25,7 @@ export async function runDaily({ collect = collectConfiguredSources, backupLocal
   for (const failure of summary.failures) await record(failure.error, "collection", failure.id);
 
   const cloud = Boolean(env.SUPABASE_DB_URL || env.DATABASE_URL);
+  if (env.BAIDU_OFFSITE_ENABLED === "1" && !cloud) await record(new Error("A cloud database connection is required for offsite backup"), "backup.offsite");
   if (summary.results.length) {
     try { const backup = await backupLocal(); log(JSON.stringify({ backup: backup.destination, retention: backup.retention })); }
     catch (error) { await record(error, "backup.local"); }
@@ -37,8 +39,15 @@ export async function runDaily({ collect = collectConfiguredSources, backupLocal
   }
   // Cloud review changes must be protected even if every collector fails.
   if (cloud) {
-    try { log(JSON.stringify({ supabaseBackup: await backupCloud() })); }
+    let backup;
+    try { backup = await backupCloud(); log(JSON.stringify({ supabaseBackup: backup })); }
     catch (error) { await record(error, "backup.cloud"); }
+    if (env.BAIDU_OFFSITE_ENABLED === "1") {
+      if (backup?.destination) {
+        try { log(JSON.stringify({ offsiteBackup: await uploadOffsite(backup.destination) })); }
+        catch (error) { await record(error, "backup.offsite"); }
+      } else await record(new Error("A valid cloud backup is required for offsite upload"), "backup.offsite");
+    }
     try {
       const result = await health();
       log(JSON.stringify({ health: result }));

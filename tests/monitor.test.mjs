@@ -244,3 +244,42 @@ test("local-only daily runs do not attempt cloud operations", async () => {
   assert.equal((await runDaily(fixture.options)).status, "ok");
   assert.deepEqual(fixture.calls, ["local"]);
 });
+
+test("offsite upload follows the new encrypted backup and a failure does not hide health checks", async () => {
+  const fixture = dailyFixture({
+    env: { SUPABASE_DB_URL: SECRET, BAIDU_OFFSITE_ENABLED: "1" },
+    backupCloud: async () => { fixture.calls.push("cloud"); return { destination: "new.cjbackup" }; },
+    uploadOffsite: async (path) => { assert.equal(path, "new.cjbackup"); fixture.calls.push("offsite"); throw secretError(); },
+  });
+  const result = await runDaily(fixture.options);
+  assert.equal(result.status, "degraded");
+  assert.deepEqual(fixture.calls, ["local", "sync", "cloud", "offsite", "health"]);
+  assert.deepEqual(fixture.records.map((event) => event.operation), ["backup.offsite"]);
+  assert.ok(!JSON.stringify([result, fixture.records, fixture.output]).includes(SECRET));
+});
+
+test("offsite upload is not attempted when encrypted backup generation fails", async () => {
+  const fixture = dailyFixture({
+    env: { SUPABASE_DB_URL: SECRET, BAIDU_OFFSITE_ENABLED: "1" },
+    backupCloud: async () => { throw secretError(); },
+    uploadOffsite: async () => { fixture.calls.push("offsite"); },
+  });
+  const result = await runDaily(fixture.options);
+  assert.equal(result.status, "degraded");
+  assert.deepEqual(fixture.calls, ["local", "sync", "health"]);
+  assert.deepEqual(fixture.records.map((event) => event.operation), ["backup.cloud", "backup.offsite"]);
+});
+
+test("enabled offsite backup without a cloud connection cannot silently succeed", async () => {
+  const fixture = dailyFixture({ env: { BAIDU_OFFSITE_ENABLED: "1" } });
+  const result = await runDaily(fixture.options);
+  assert.equal(result.status, "degraded");
+  assert.deepEqual(fixture.calls, ["local"]);
+  assert.deepEqual(fixture.records.map((event) => event.operation), ["backup.offsite"]);
+});
+
+test("offsite remains disabled by default and uploads only when explicitly enabled", async () => {
+  const fixture = dailyFixture({ uploadOffsite: async () => { throw new Error("Disabled upload was attempted"); } });
+  assert.equal((await runDaily(fixture.options)).status, "ok");
+  assert.deepEqual(fixture.calls, ["local", "sync", "cloud", "health"]);
+});

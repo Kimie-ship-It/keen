@@ -8,3 +8,6 @@ coverage/
 *.log
 *.cjbackup
 *.cjbackup.partial
+*.cjkey
+baidu-oauth.json
+baidu-oauth.json.*.partial

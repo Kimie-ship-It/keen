@@ -47,6 +47,8 @@ yarn-error.log*
 *.cjbackup
 *.cjbackup.partial
 *.cjkey
+baidu-oauth.json
+baidu-oauth.json.*.partial
 
 # typescript
 *.tsbuildinfo

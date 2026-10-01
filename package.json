@@ -24,6 +24,7 @@
     "backup:key": "pwsh -NoProfile -STA -File scripts/backup-key-dialog.ps1",
     "backup:supabase": "node scripts/supabase-backup.mjs",
     "backup:supabase:verify": "node scripts/supabase-backup.mjs --verify",
+    "backup:offsite": "node scripts/offsite-backup.mjs",
     "restore:supabase": "node scripts/supabase-restore.mjs",
     "test:cloud-backup": "node --test tests/cloud-backup.integration.mjs",
     "monitor:check": "node scripts/monitor-health.mjs",
