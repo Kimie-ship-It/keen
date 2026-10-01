@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { openDatabase, closeDatabase } from "../../../../../scripts/db.mjs";
+import { openRuntimeDatabase, closeRuntimeDatabase } from "../../../../../scripts/runtime-db.mjs";
 import { getSavedJobs } from "../../../../../scripts/jobs-service.mjs";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +16,10 @@ export async function GET(request) {
   const raw = new URL(request.url).searchParams.get("ids") || "";
   const keys = raw.split(",").map((key) => key.trim()).filter(Boolean);
   if (keys.length > 500) return NextResponse.json({ error: "一次最多导出 500 条收藏" }, { status: 400 });
-  const db = await openDatabase();
+  let db;
   try {
-    const jobs = getSavedJobs(db, keys);
+    db = await openRuntimeDatabase();
+    const jobs = (await getSavedJobs(db, keys));
     const header = ["收藏键", "公司", "招聘标题", "来源高校", "工作地点", "行业", "发布时间", "截止日期", "招聘人数", "审核状态", "官方公告"];
     const rows = jobs.map((job) => csvRow([
       job.savedKey,
@@ -41,7 +42,9 @@ export async function GET(request) {
         "Cache-Control": "no-store",
       },
     });
+  } catch {
+    return NextResponse.json({ error: "收藏导出暂时不可用，请稍后重试" }, { status: 503 });
   } finally {
-    closeDatabase(db);
+    closeRuntimeDatabase(db);
   }
 }

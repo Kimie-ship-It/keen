@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { openDatabase, closeDatabase } from "../../../../../scripts/db.mjs";
-import { checkAdminAuthorization, listPendingReviews, readBearerToken, updateReview, validateReviewInput } from "../../../../../scripts/reviews.mjs";
+import { openRuntimeDatabase, closeRuntimeDatabase } from "../../../../../scripts/runtime-db.mjs";
+import { checkAdminAuthorization, listPendingReviews, readBearerToken, updateReview, validateReviewInput } from "../../../../../scripts/runtime-reviews.mjs";
 import { parsePagination } from "../../../../../scripts/query.mjs";
 
 export const dynamic = "force-dynamic";
@@ -13,26 +13,32 @@ function accessDenied(auth) {
 }
 
 export async function GET(request) {
-  const db = await openDatabase();
+  let db;
   try {
-    const auth = checkAdminAuthorization(db, process.env.ADMIN_TOKEN, readBearerToken(request.headers.get("authorization") || ""));
+    db = await openRuntimeDatabase();
+    const auth = (await checkAdminAuthorization(db, process.env.ADMIN_TOKEN, readBearerToken(request.headers.get("authorization") || "")));
     if (!auth.authorized) return accessDenied(auth);
     let pagination;
     try { pagination = parsePagination(new URL(request.url).searchParams); }
     catch (error) { return NextResponse.json({ error: error.message }, { status: 400 }); }
-    return NextResponse.json(listPendingReviews(db, pagination));
-  } finally { closeDatabase(db); }
+    return NextResponse.json((await listPendingReviews(db, pagination)));
+  } catch {
+    return NextResponse.json({ error: "管理服务暂时不可用，请稍后重试" }, { status: 503 });
+  } finally { closeRuntimeDatabase(db); }
 }
 
 export async function POST(request) {
-  const db = await openDatabase();
+  let db;
   try {
-    const auth = checkAdminAuthorization(db, process.env.ADMIN_TOKEN, readBearerToken(request.headers.get("authorization") || ""));
+    db = await openRuntimeDatabase();
+    const auth = (await checkAdminAuthorization(db, process.env.ADMIN_TOKEN, readBearerToken(request.headers.get("authorization") || "")));
     if (!auth.authorized) return accessDenied(auth);
     let input;
     try { input = await request.json(); } catch { return NextResponse.json({ error: "无效请求" }, { status: 400 }); }
     try { validateReviewInput(input); } catch (error) { return NextResponse.json({ error: error.message }, { status: 400 }); }
-    if (!updateReview(db, input)) return NextResponse.json({ error: "记录不存在" }, { status: 404 });
+    if (!(await updateReview(db, input))) return NextResponse.json({ error: "记录不存在" }, { status: 404 });
     return NextResponse.json({ ok: true });
-  } finally { closeDatabase(db); }
+  } catch {
+    return NextResponse.json({ error: "管理服务暂时不可用，请稍后重试" }, { status: 503 });
+  } finally { closeRuntimeDatabase(db); }
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { openDatabase, closeDatabase } from "../../../../scripts/db.mjs";
+import { openRuntimeDatabase, closeRuntimeDatabase } from "../../../../scripts/runtime-db.mjs";
 import { parsePagination } from "../../../../scripts/query.mjs";
-import { listJobs } from "../../../../scripts/jobs-service.mjs";
+import { listJobs, QueryValidationError } from "../../../../scripts/jobs-service.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +16,14 @@ export async function GET(request) {
   try { pagination = parsePagination(url.searchParams); }
   catch (error) { return NextResponse.json({ error: error.message }, { status: 400 }); }
   const { limit, offset } = pagination;
-  const db = await openDatabase();
+  let db;
   try {
-    return NextResponse.json(listJobs(db, { q, source, city, industry, deadline, limit, offset }));
+    db = await openRuntimeDatabase();
+    return NextResponse.json((await listJobs(db, { q, source, city, industry, deadline, limit, offset })));
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error instanceof QueryValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ error: "招聘数据暂时无法读取，请稍后重试" }, { status: 503 });
   } finally {
-    closeDatabase(db);
+    closeRuntimeDatabase(db);
   }
 }

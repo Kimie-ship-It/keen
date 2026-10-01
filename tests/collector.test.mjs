@@ -176,7 +176,7 @@ test("北京理工大学夹具覆盖字段映射、多校去重和失败保护",
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs").get().n, 4);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE source='北京理工大学'").get().n, 2);
     assert.equal(db.prepare("SELECT detail_url FROM jobs WHERE source_id='bit-fixture-b'").get().detail_url, "https://job.bit.edu.cn/f/recruitmentinfo/show?recruitmentId=bit-fixture-b");
-    const publicData = listJobs(db);
+    const publicData = (await listJobs(db));
     assert.equal(publicData.matchCount, 3);
     const merged = publicData.jobs.find((job) => job.company === "示例科技有限公司");
     assert.equal(merged.sourceCount, 2);
@@ -224,7 +224,7 @@ test("北京交通大学夹具覆盖独立接口、字段映射、去重和失�
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs").get().n, 4);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE source='北京交通大学'").get().n, 2);
     assert.equal(db.prepare("SELECT detail_url FROM jobs WHERE source_id='bjtu-fixture-b'").get().detail_url, "https://job.bjtu.edu.cn/f/recruitmentinfo/show?recruitmentId=bjtu-fixture-b");
-    const publicData = listJobs(db);
+    const publicData = (await listJobs(db));
     assert.equal(publicData.matchCount, 3);
     const merged = publicData.jobs.find((job) => job.company === "示例科技有限公司");
     assert.equal(merged.sourceCount, 2);
@@ -273,7 +273,7 @@ test("南开大学 HTML 夹具覆盖分页解析、字段映射、去重和失�
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs").get().n, 4);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE source='南开大学'").get().n, 2);
     assert.equal(db.prepare("SELECT detail_url FROM jobs WHERE source_id='2002'").get().detail_url, "https://career.nankai.edu.cn/correcruit/content/id/2002.html");
-    const publicData = listJobs(db);
+    const publicData = (await listJobs(db));
     assert.equal(publicData.matchCount, 3);
     const merged = publicData.jobs.find((job) => job.company === "示例科技有限公司");
     assert.equal(merged.sourceCount, 2);
@@ -380,7 +380,7 @@ test("公开接口只返回来源白名单内的官方链接", async () => {
     insert.run("北京航空航天大学", "good", "甲公司", "官方链接", "https://career.buaa.edu.cn/f/good", now, now, "2026-09-29");
     insert.run("北京航空航天大学", "bad", "乙公司", "伪装链接", "https://career.buaa.edu.cn.evil.example/f/bad", now, now, "2026-09-28");
     insert.run("未知大学", "unknown", "丙公司", "未知来源", "https://career.buaa.edu.cn/f/unknown", now, now, "2026-09-27");
-    const jobs = listJobs(db).jobs;
+    const jobs = (await listJobs(db)).jobs;
     assert.equal(jobs.find((job) => job.sourceId === "good").detailUrl, "https://career.buaa.edu.cn/f/good");
     assert.equal(jobs.find((job) => job.sourceId === "bad").detailUrl, "");
     assert.equal(jobs.find((job) => job.sourceId === "unknown").detailUrl, "");
@@ -399,7 +399,7 @@ test("多高校重复招聘合并展示但保留原始记录", async () => {
     insert.run({ ...shared, source: "北京理工大学", sourceId: "b", detailUrl: "https://job.bit.edu.cn/f/b", title: "2027届校园招聘！", publishedAt: "2026-09-30", reviewStatus: "approved", dedupeKey: createDedupeKey({ ...shared, title: "2027届校园招聘！", source: "北京理工大学", sourceId: "b" }) });
     const distinct = { ...shared, source: "北京理工大学", sourceId: "c", detailUrl: "https://job.bit.edu.cn/f/c", title: "2027届实习生招聘", publishedAt: "2026-09-28" };
     insert.run({ ...distinct, dedupeKey: createDedupeKey(distinct) });
-    const response = listJobs(db, { limit: 1 });
+    const response = (await listJobs(db, { limit: 1 }));
     assert.equal(db.prepare("SELECT COUNT(*) AS total FROM jobs").get().total, 3);
     assert.equal(response.matchCount, 2);
     assert.equal(response.stats.total, 3);
@@ -410,8 +410,8 @@ test("多高校重复招聘合并展示但保留原始记录", async () => {
     assert.equal(response.jobs[0].sourceCount, 2);
     assert.equal(response.jobs[0].duplicateCount, 2);
     assert.deepEqual(response.jobs[0].sourceLinks.map((link) => link.source), ["北京理工大学", "北京航空航天大学"]);
-    assert.equal(listJobs(db, { limit: 1, offset: 1 }).jobs[0].sourceId, "c");
-    const filtered = listJobs(db, { source: "北京航空航天大学" });
+    assert.equal((await listJobs(db, { limit: 1, offset: 1 })).jobs[0].sourceId, "c");
+    const filtered = (await listJobs(db, { source: "北京航空航天大学" }));
     assert.equal(filtered.jobs.length, 1);
     assert.equal(filtered.jobs[0].source, "北京航空航天大学");
     assert.equal(filtered.jobs[0].sourceCount, 1);
@@ -421,8 +421,8 @@ test("多高校重复招聘合并展示但保留原始记录", async () => {
     assert.equal(filtered.stats.total, 1);
     assert.equal(filtered.stats.uniqueTotal, 1);
     assert.equal(filtered.stats.sources, 1);
-    assert.equal(listJobs(db, { source: "北京理工大学", q: "实习生" }).jobs[0].sourceId, "c");
-    assert.throws(() => listJobs(db, { source: "不存在大学" }), /未知高校来源/);
+    assert.equal((await listJobs(db, { source: "北京理工大学", q: "实习生" })).jobs[0].sourceId, "c");
+    await assert.rejects(async () => (await listJobs(db, { source: "不存在大学" })), /未知高校来源/);
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -442,20 +442,20 @@ test("查询隐藏过滤、搜索、分页和空列表", async () => {
     db.prepare("INSERT INTO source_runs (source, started_at, finished_at, status, fetched_count, new_count, error) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run("甲大学", now, now, "failed", 0, 0, "内部路径不应公开");
     refreshSourceStatus(db, "甲大学");
-    assert.equal(listJobs(db, { limit: 1 }).jobs.length, 1);
-    assert.equal(listJobs(db, { limit: 1 }).matchCount, 2);
-    assert.equal(Object.hasOwn(listJobs(db).runs[0], "error"), false);
-    const nextDay = listJobs(db, { now: Date.parse("2026-09-30T00:00:00Z") });
+    assert.equal((await listJobs(db, { limit: 1 })).jobs.length, 1);
+    assert.equal((await listJobs(db, { limit: 1 })).matchCount, 2);
+    assert.equal(Object.hasOwn((await listJobs(db)).runs[0], "error"), false);
+    const nextDay = (await listJobs(db, { now: Date.parse("2026-09-30T00:00:00Z") }));
     assert.equal(nextDay.freshness.isStale, true);
     assert.equal(nextDay.freshness.failedSources, 1);
     assert.equal(nextDay.sources.find((source) => source.source === "甲大学").lastStatus, "failed");
     assert.equal(nextDay.sources.find((source) => source.source === "乙大学").isStale, true);
     assert.ok(!JSON.stringify(nextDay).includes("内部路径不应公开"));
-    assert.equal(listJobs(db, { now: Date.parse("2026-10-02T00:00:01Z") }).freshness.staleSources, 2);
-    assert.equal(listJobs(db).freshness.lastSuccessfulAt, "2026-09-29T00:00:00Z");
-    assert.equal(listJobs(db, { q: "乙公司" }).jobs[0].sourceId, "2");
-    assert.deepEqual(listJobs(db, { q: "不存在" }).jobs, []);
-    assert.equal(listJobs(db, { offset: 1 }).jobs[0].sourceId, "2");
+    assert.equal((await listJobs(db, { now: Date.parse("2026-10-02T00:00:01Z") })).freshness.staleSources, 2);
+    assert.equal((await listJobs(db)).freshness.lastSuccessfulAt, "2026-09-29T00:00:00Z");
+    assert.equal((await listJobs(db, { q: "乙公司" })).jobs[0].sourceId, "2");
+    assert.deepEqual((await listJobs(db, { q: "不存在" })).jobs, []);
+    assert.equal((await listJobs(db, { offset: 1 })).jobs[0].sourceId, "2");
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -478,14 +478,14 @@ test("工作地点提取和城市筛选", async () => {
     const a = insert.run("北京航空航天大学", "city-a", "甲公司", "北京岗位", now, now, "2026-09-30", "pending").lastInsertRowid;
     const b = insert.run("北京理工大学", "city-b", "乙公司", "上海岗位", now, now, "2026-09-29", "pending").lastInsertRowid;
     db.prepare("INSERT INTO job_locations (job_id, location) VALUES (?, ?), (?, ?)").run(a, "北京", b, "上海");
-    const beijing = listJobs(db, { city: "北京" });
+    const beijing = (await listJobs(db, { city: "北京" }));
     assert.equal(beijing.matchCount, 1);
     assert.equal(beijing.stats.total, 1);
     assert.equal(beijing.stats.uniqueTotal, 1);
     assert.equal(beijing.jobs[0].source, "北京航空航天大学");
     assert.deepEqual(beijing.jobs[0].locations, ["北京"]);
-    assert.equal(listJobs(db, { city: "北京", source: "北京航空航天大学", q: "北京岗位" }).jobs.length, 1);
-    assert.throws(() => listJobs(db, { city: "不存在城市" }), /未知工作城市/);
+    assert.equal((await listJobs(db, { city: "北京", source: "北京航空航天大学", q: "北京岗位" })).jobs.length, 1);
+    await assert.rejects(async () => (await listJobs(db, { city: "不存在城市" })), /未知工作城市/);
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -500,11 +500,11 @@ test("行业分类和行业筛选", async () => {
     const finance = insert.run("北京航空航天大学", "industry-a", "招商银行", "金融科技岗位", now, now, "2026-09-30", "pending", "industry-a").lastInsertRowid;
     const tech = insert.run("北京理工大学", "industry-b", "某信息技术公司", "软件工程师", now, now, "2026-09-29", "pending", "industry-b").lastInsertRowid;
     db.prepare("INSERT INTO job_industries (job_id, industry) VALUES (?, ?), (?, ?)").run(finance, "金融", tech, "信息技术/互联网");
-    const result = listJobs(db, { industry: "金融" });
+    const result = (await listJobs(db, { industry: "金融" }));
     assert.equal(result.matchCount, 1);
     assert.equal(result.jobs[0].company, "招商银行");
-    assert.equal(listJobs(db, { industry: "金融", source: "北京航空航天大学" }).jobs.length, 1);
-    assert.throws(() => listJobs(db, { industry: "不存在行业" }), /未知行业/);
+    assert.equal((await listJobs(db, { industry: "金融", source: "北京航空航天大学" })).jobs.length, 1);
+    await assert.rejects(async () => (await listJobs(db, { industry: "不存在行业" })), /未知行业/);
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -519,11 +519,11 @@ test("截止日期筛选和组合查询", async () => {
     const expired = insert.run("北京理工大学", "deadline-c", "丙科技", "过期岗位", now, now, "2026-09-30", "2026-09-01", "pending", "deadline-c").lastInsertRowid;
     const unknown = insert.run("北京理工大学", "deadline-d", "丁科技", "无日期岗位", now, now, "2026-09-30", "", "pending", "deadline-d").lastInsertRowid;
     db.prepare("INSERT INTO job_industries (job_id, industry) VALUES (?, ?), (?, ?), (?, ?), (?, ?)").run(open, "信息技术/互联网", due, "信息技术/互联网", expired, "信息技术/互联网", unknown, "信息技术/互联网");
-    assert.equal(listJobs(db, { deadline: "open", now: Date.parse("2026-09-30T00:00:00Z") }).matchCount, 2);
-    assert.equal(listJobs(db, { deadline: "due7", now: Date.parse("2026-09-30T00:00:00Z") }).jobs[0].sourceId, "deadline-b");
-    assert.equal(listJobs(db, { deadline: "expired", now: Date.parse("2026-09-30T00:00:00Z") }).jobs[0].sourceId, "deadline-c");
-    assert.equal(listJobs(db, { deadline: "unknown", industry: "信息技术/互联网", source: "北京理工大学", now: Date.parse("2026-09-30T00:00:00Z") }).matchCount, 1);
-    assert.throws(() => listJobs(db, { deadline: "bad" }), /未知截止日期筛选/);
+    assert.equal((await listJobs(db, { deadline: "open", now: Date.parse("2026-09-30T00:00:00Z") })).matchCount, 2);
+    assert.equal((await listJobs(db, { deadline: "due7", now: Date.parse("2026-09-30T00:00:00Z") })).jobs[0].sourceId, "deadline-b");
+    assert.equal((await listJobs(db, { deadline: "expired", now: Date.parse("2026-09-30T00:00:00Z") })).jobs[0].sourceId, "deadline-c");
+    assert.equal((await listJobs(db, { deadline: "unknown", industry: "信息技术/互联网", source: "北京理工大学", now: Date.parse("2026-09-30T00:00:00Z") })).matchCount, 1);
+    await assert.rejects(async () => (await listJobs(db, { deadline: "bad" })), /未知截止日期筛选/);
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -537,15 +537,15 @@ test("招聘详情保留合并来源、地点、行业和官方链接", async ()
     const second = insert.run("北京理工大学", "detail-b", "甲科技", "联合招聘", now, now, "2026-09-29", "2026-10-15", "https://job.bit.edu.cn/f/b", "approved", "same-detail").lastInsertRowid;
     db.prepare("INSERT INTO job_locations (job_id, location) VALUES (?, ?), (?, ?)").run(first, "北京", second, "上海");
     db.prepare("INSERT INTO job_industries (job_id, industry) VALUES (?, ?), (?, ?)").run(first, "信息技术/互联网", second, "信息技术/互联网");
-    const detail = getJobDetail(db, { source: "北京航空航天大学", sourceId: "detail-a" });
+    const detail = (await getJobDetail(db, { source: "北京航空航天大学", sourceId: "detail-a" }));
     assert.equal(detail.title, "联合招聘");
     assert.equal(detail.reviewStatus, "approved");
     assert.equal(detail.sourceCount, 2);
     assert.deepEqual(detail.locations, ["北京", "上海"]);
     assert.deepEqual(detail.industries, ["信息技术/互联网"]);
     assert.deepEqual(detail.sourceLinks.map((link) => link.source).sort(), ["北京理工大学", "北京航空航天大学"]);
-    assert.equal(getJobDetail(db, { source: "未知大学", sourceId: "detail-a" }), null);
-    assert.equal(getSavedJobs(db, ["北京航空航天大学:detail-a", "无效键", "未知大学:x"]).length, 1);
+    assert.equal((await getJobDetail(db, { source: "未知大学", sourceId: "detail-a" })), null);
+    assert.equal((await getSavedJobs(db, ["北京航空航天大学:detail-a", "无效键", "未知大学:x"])).length, 1);
   } finally { closeDatabase(db); await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -555,7 +555,7 @@ test("收藏导出按收藏键读取全部记录并忽略失效收藏", async ()
   try {
     const now = new Date().toISOString();
     db.prepare("INSERT INTO jobs (source, source_id, company, title, first_seen_at, last_seen_at, detail_url, review_status, dedupe_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run("北京航空航天大学", "export-a", "甲公司", "可导出岗位", now, now, "https://career.buaa.edu.cn/f/a", "pending", "export-a");
-    const jobs = getSavedJobs(db, ["北京航空航天大学:export-a", "北京航空航天大学:missing", "bad-key"]);
+    const jobs = (await getSavedJobs(db, ["北京航空航天大学:export-a", "北京航空航天大学:missing", "bad-key"]));
     assert.equal(jobs.length, 1);
     assert.equal(jobs[0].savedKey, "北京航空航天大学:export-a");
     assert.equal(jobs[0].sourceLinks[0].detailUrl, "https://career.buaa.edu.cn/f/a");
@@ -571,7 +571,7 @@ test("逐高校更新时间独立判断，不被其他高校成功更新掩盖",
     insert.run("乙大学", "2026-09-30T00:00:00Z", "2026-09-30T00:01:00Z", "success", 1, 1, null);
     insert.run("丙大学", "2026-09-30T00:00:00Z", "2026-09-30T00:01:00Z", "failed", 0, 0, "secret-path");
     for (const source of ["甲大学", "乙大学", "丙大学"]) refreshSourceStatus(db, source);
-    const response = listJobs(db, { now: Date.parse("2026-09-30T01:00:00Z") });
+    const response = (await listJobs(db, { now: Date.parse("2026-09-30T01:00:00Z") }));
     assert.equal(response.sources.length, 3);
     assert.equal(response.sources.find((source) => source.source === "甲大学").isStale, true);
     assert.equal(response.sources.find((source) => source.source === "乙大学").isStale, false);

@@ -20,10 +20,11 @@ This is a local prototype that aggregates public university recruitment notices.
 - Develop: `npm run dev` and open `http://localhost:3000`.
 - Collect one source with `npm run collect:buaa`, `npm run collect:bit`, `npm run collect:bjtu`, or `npm run collect:nankai`; run all configured sources with `npm run collect:daily`; install the Windows daily task with `npm run schedule:install`.
 - Required checks after code changes: `npm test`, `npm run lint`, and `npm run build`.
+- After PostgreSQL/runtime changes also run `npm run test:supabase` against temporary rollback-only tables; verify live HTTP with `npm run test:runtime-http` against a separately started website. Never expose credentials in output.
 
 ## Stack
 
-Next.js 16 App Router, React 19, TypeScript/JavaScript, SQLite through `better-sqlite3`, and Node test runner.
+Next.js 16 App Router, React 19, TypeScript/JavaScript, local collector SQLite through `better-sqlite3`, website Supabase PostgreSQL through `pg`, and Node test runner.
 
 ## Layout And Conventions
 
@@ -32,8 +33,11 @@ Next.js 16 App Router, React 19, TypeScript/JavaScript, SQLite through `better-s
 - Preserve existing rows on collection failure or an unexpected empty source response.
 - Public notices remain `pending` until reviewed; UI text must distinguish pending from approved.
 - Official links must stay on the configured university host. The app links to notices; it does not submit applications.
+- Website storage is explicitly selected with `CAMPUS_JOBS_STORAGE=sqlite|supabase`; never silently fall back on connection failure. Website query/review services are asynchronous in both modes.
+- Supabase owns review status, review audit, and admin limits. Collector sync only owns five collection tables and must preserve cloud reviews. Local backups do not yet contain cloud review changes; reconcile these before SQLite rollback.
+- TLS certificate verification is on by default. This machine currently needs the explicitly documented `SUPABASE_SSL_INSECURE=1` compatibility exception; configure a trusted CA and remove this exception before public deployment.
 - Keep `CLAUDE.md` as the pointer to this file and retain the generated Next.js block above.
 
 ## Current Status And Next Step
 
-Local database/API/UI, BUAA, BIT, BJTU, and Nankai collectors, review controls, multi-source backups, a Windows daily task, server-side university, city, industry, and deadline filtering, independent recruitment detail pages, and browser-local saved-job CSV export are implemented. Industry labels are rule-based and include an explicit “未分类” bucket. Feishu setup and test commands exist, but delivery is not live until a real group webhook is configured and received. The fifth pilot university is canceled for this phase. The repository is connected to `https://github.com/Kimie-ship-It/keen.git`; the latest local checkpoint still needs to be pushed when GitHub connectivity is available. Supabase PostgreSQL is selected, the test project exists, the initial schema migration with RLS has been applied, and the imported baseline was verified. An optional `SUPABASE_DB_URL` sync adapter now mirrors the local backup after successful daily collection, but the website query path and review writes still use local SQLite until a real connection and end-to-end verification are completed.
+Local database/API/UI, four collectors, reviews, local backups, the Windows daily task, server-side filters, detail pages, and saved-job CSV export are implemented. Industry labels are inferred. Feishu delivery remains deferred and the fifth pilot university is canceled. The Git remote is `https://github.com/Kimie-ship-It/keen.git`; verify push status live before claiming remote delivery. Supabase schema and data are verified and this machine now selects Supabase for website queries, exports, and review writes. The collector stays on SQLite, synchronizing five collection tables after local backup; it never overwrites cloud review status, audit, or auth limits. This is not a public nationwide service: hosting/HTTPS, production certificate verification, cloud collection, monitoring, cloud backup/recovery, privacy/takedown, and public end-to-end verification remain pending. Review `docs/PROJECT-CHECKLIST.md` at task start and after each completion; create a step checkpoint backup after verification.

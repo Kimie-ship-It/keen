@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ExternalLink, GraduationCap } from "lucide-react";
-import { openDatabase, closeDatabase } from "../../../../../scripts/db.mjs";
+import { openRuntimeDatabase, closeRuntimeDatabase } from "../../../../../scripts/runtime-db.mjs";
 import { getJobDetail } from "../../../../../scripts/jobs-service.mjs";
 import styles from "./detail.module.css";
 
@@ -25,9 +25,9 @@ function decodeRouteValue(value: string) {
 
 export default async function JobDetailPage({ params }: PageProps) {
   const route = await params;
-  const db = await openDatabase();
+  const db = await openRuntimeDatabase();
   try {
-    const job = getJobDetail(db, { source: decodeRouteValue(route.source), sourceId: decodeRouteValue(route.sourceId) });
+    const job = (await getJobDetail(db, { source: decodeRouteValue(route.source), sourceId: decodeRouteValue(route.sourceId) }));
     if (!job) notFound();
     const links: SourceLink[] = job.sourceLinks.filter((link: SourceLink) => officialLink(link.detailUrl));
     return <div className={styles.pageShell}>
@@ -51,6 +51,6 @@ export default async function JobDetailPage({ params }: PageProps) {
       <footer className={styles.footer}><span>校招雷达</span><span>数据来源于公开高校就业信息，请以官方公告为准。</span></footer>
     </div>;
   } finally {
-    closeDatabase(db);
+    closeRuntimeDatabase(db);
   }
 }
