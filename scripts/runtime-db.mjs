@@ -5,6 +5,7 @@ let pool;
 export function storageMode(env = process.env) {
   const mode = env.CAMPUS_JOBS_STORAGE || "sqlite";
   if (!["sqlite", "supabase"].includes(mode)) throw new Error("Invalid database storage mode");
+  if (env.VERCEL === "1" && mode !== "supabase") throw new Error("Vercel requires Supabase storage");
   return mode;
 }
 

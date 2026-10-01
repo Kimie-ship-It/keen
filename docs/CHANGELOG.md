@@ -58,6 +58,9 @@
 
 ## 2026-10-01
 
+- 在等待 Vercel 账号验证期间完成上线准备：加入 `vercel.json`、`.vercelignore`、托管构建前配置检查和部署步骤文档，明确当前尚无公网网站和 HTTPS 验收结果。生产密钥未上传，不为不可信预览开放生产数据库。
+- 打包 Supabase 官方公开 CA，测试核对 SHA-256 指纹；本机移除关闭证书校验的例外并验证真实连接，Vercel 运行时拒绝 SQLite 和不安全 TLS。同步更新 README、项目规则和数据库选型记录，区分本机采集备份与云端审核归属。
+- 本次验证：30 项自动测试、3 项 Supabase 临时表回滚集成测试、lint、托管生产构建通过；模拟 Vercel 环境真实 HTTP 查询为 4919 条原始记录、4134 条合并招聘、4 个来源，详情、CSV、后台权限及 500 条收藏批量读取通过；待提交文件真实密钥扫描无匹配。
 - 完成 Supabase 运行时同步适配层的真实连接验证：使用 Transaction Pooler 连接成功，未在代码或日志中保存数据库密码。
 - 本地 SQLite 七张表已同步到 Supabase，云端核对数量为 `jobs 4919`、`job_locations 13761`、`job_industries 9786`、`source_runs 30`、`source_status 4`、`review_events 0`、`admin_auth_limits 1`。
 - 同步脚本的明细关联数据改为分批写入，避免逐条请求在长任务中触发连接重置；测试、lint 和生产构建全部通过。

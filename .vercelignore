@@ -1,0 +1,8 @@
+.env*
+data/
+test-results/
+coverage/
+*.db
+*.db-shm
+*.db-wal
+*.log

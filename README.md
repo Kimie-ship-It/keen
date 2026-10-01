@@ -95,8 +95,8 @@ npm run schedule:install
 - `COLLECT_INTERVAL_MS`：常驻采集模式的间隔，默认 1 小时。
 - `SUPABASE_DB_URL`：Supabase PostgreSQL 连接字符串。只写入本机 `.env.local` 或线上密钥管理器，不要提交到 Git。配置后，每日采集成功并完成本地备份后同步招聘、地点、行业、来源运行、来源状态这五张采集表，不上传本地审核日志和口令限速状态。
 - `CAMPUS_JOBS_STORAGE`：网站数据库模式，允许 `sqlite`（未指定时的默认值）或 `supabase`。本机已设为 `supabase`，配置后需要重启网站；云端连接失败时接口返回 503，不自动回退到 SQLite。
-- `SUPABASE_SSL_CA`：可选的可信 CA 证书 PEM 内容，可用 `\n` 表示换行。默认验证服务器证书；连接地址中的 SSL 参数不会覆盖该验证策略。
-- `SUPABASE_SSL_INSECURE`：仅用于本机诊断的证书校验例外，`1` 关闭校验，默认不开启。本机因证书链校验失败暂时使用该例外；公网部署前必须配置可信证书链并删除例外或设为 `0`，不能将当前连接宣称为生产安全配置。
+- `SUPABASE_SSL_CA`：可选的可信 CA 证书 PEM 内容，可用 `\n` 表示换行。Supabase 主机默认使用随代码打包的官方公开 CA，其他数据库使用系统信任链；连接地址中的 SSL 参数不会覆盖验证策略。
+- `SUPABASE_SSL_INSECURE`：仅用于本机诊断的证书校验例外，`1` 关闭校验，默认不开启。本机已设为 `0` 并使用官方 CA 连接成功；托管构建和 Vercel 运行时都拒绝关闭校验。
 
 未配置飞书 webhook 时采集照常运行，只是不发送日报和故障提醒。
 
@@ -149,4 +149,4 @@ npm run build
 
 ## 下一阶段
 
-当前已建立正式 Git 远程仓库 `https://github.com/Kimie-ship-It/keen.git`，Supabase 测试项目已导入初始迁移和数据，7 张表均已启用 RLS。本机网站查询和审核已选择 Supabase，采集仍在本地 SQLite 完成并每日同步五张采集表。第五所高校本阶段已取消，真实飞书机器人暂缓。下一步是确定网站托管平台并配置 HTTPS，同时补齐可信证书链、错误监控、云端数据库备份与恢复、隐私和下架机制及真实公网访问验证；云端定时采集也尚未部署。
+当前已建立正式 Git 远程仓库 `https://github.com/Kimie-ship-It/keen.git`，Supabase 测试项目已导入初始迁移和数据，7 张表均已启用 RLS。本机网站查询和审核已选择 Supabase，采集仍在本地 SQLite 完成并每日同步五张采集表。第五所高校本阶段已取消，真实飞书机器人暂缓。首选 Vercel 托管，账号验证申请已提交，尚未取得公网地址。官方数据库 CA、托管构建检查和部署配置已准备；具体发布步骤见 `docs/HOSTING-DEPLOYMENT.md`。下一步在账号通过后配置生产密钥并验证 HTTPS，再补齐错误监控、云端备份恢复、隐私和下架机制；云端定时采集也尚未部署。

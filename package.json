@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:hosting": "npm run check:hosting && next build",
+    "check:hosting": "node scripts/check-hosting.mjs",
     "start": "next start",
     "lint": "eslint",
     "collect:buaa": "node scripts/collect-buaa.mjs",
