@@ -20,6 +20,7 @@
     "backup:step": "node scripts/backup-step.mjs",
     "sync:supabase": "node scripts/supabase-sync.mjs",
     "check:supabase": "node scripts/supabase-sync.mjs --check",
+    "setup:supabase": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-supabase.ps1",
     "schedule:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-daily.ps1",
     "test": "node --test tests/*.test.mjs",
     "setup:local": "node scripts/setup-local.mjs",

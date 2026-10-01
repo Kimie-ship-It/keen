@@ -3,6 +3,7 @@
 ## 2026-09-30
 
 - 增加可选 Supabase 同步适配器：`scripts/supabase-sync.mjs` 使用受控 PostgreSQL 连接池，在本地每日采集和备份成功后同步七张业务表；增加 `sync:supabase`、`check:supabase` 命令和 `SUPABASE_DB_URL` 配置。当前未配置线上连接字符串，网站查询和审核写入仍使用 SQLite，未将适配器误标记为线上切换完成。
+- 增加本机 Supabase 配置脚本：`npm run setup:supabase` 隐藏输入数据库密码并写入 `.env.local`，避免通过聊天传递凭据；配置后可运行连接检查和全量同步。
 - 完成本地备份导入与线上核对：将 `campus-jobs-import` 中剩余的 `source_status.csv`（4 条）和 `admin_auth_limits.csv`（1 条）导入 Supabase 测试项目；SQL 核对七张表结果为 `jobs 4882`、`job_locations 13761`、`job_industries 9714`、`source_runs 26`、`source_status 4`、`review_events 0`、`admin_auth_limits 1`，与本地 CSV 备份一致。下一步改为配置后台定时任务。
 - 校正线上部署顺序：当前运行时仍直接使用本地 SQLite，若先配置云端定时任务会在临时环境中采集后丢失；因此在后台定时任务前增加“建立 Supabase 运行时访问适配层”步骤。
 
@@ -54,3 +55,9 @@
 - 增加 `setup:feishu` 和 `test:feishu` 本机命令：安全写入真实 webhook/可选签名密钥并发送测试消息。真实群机器人尚未创建或配置，因此清单暂不勾选。
 
 记录原则：清单记录是否完成，Git 记录代码版本，数据库备份记录运行数据快照，本文件记录重要变更原因和验证结果。
+
+## 2026-10-01
+
+- 完成 Supabase 运行时同步适配层的真实连接验证：使用 Transaction Pooler 连接成功，未在代码或日志中保存数据库密码。
+- 本地 SQLite 七张表已同步到 Supabase，云端核对数量为 `jobs 4919`、`job_locations 13761`、`job_industries 9786`、`source_runs 30`、`source_status 4`、`review_events 0`、`admin_auth_limits 1`。
+- 同步脚本的明细关联数据改为分批写入，避免逐条请求在长任务中触发连接重置；测试、lint 和生产构建全部通过。

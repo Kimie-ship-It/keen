@@ -97,6 +97,8 @@ npm run schedule:install
 
 未配置飞书 webhook 时采集照常运行，只是不发送日报和故障提醒。
 
+配置 Supabase 数据库连接时，不要把密码发到聊天或写进 Git。直接在本机运行 `npm run setup:supabase`，按提示输入密码（输入不会显示），然后运行 `npm run check:supabase` 和 `npm run sync:supabase`。
+
 在目标飞书群创建“自定义机器人”后，在本机终端运行：
 
 ```powershell

@@ -129,8 +129,9 @@
 - [x] 导入本地备份并核对数据
   - 完成日期：2026-09-30
   - 验证：已将本地 CSV 导入 Supabase 测试项目；SQL 核对结果为 `jobs 4882`、`job_locations 13761`、`job_industries 9714`、`source_runs 26`、`source_status 4`、`review_events 0`、`admin_auth_limits 1`，与本地备份一致；7 张表仍保持 RLS 开启
-- [ ] 建立 Supabase 运行时访问适配层
-  - 当前进度：已增加 `scripts/supabase-sync.mjs` 和 `sync:supabase`/`check:supabase` 命令；每日采集在配置 `SUPABASE_DB_URL` 后会在本地备份后同步七张表。网站查询、审核写入尚未全面切换，仍需真实连接字符串和端到端验证后才能勾选
+- [x] 建立 Supabase 运行时访问适配层
+  - 完成日期：2026-10-01
+  - 验证：使用 Transaction Pooler 真实连接成功；本地 SQLite 七张表已同步到 Supabase，数量核对为 `jobs 4919`、`job_locations 13761`、`job_industries 9786`、`source_runs 30`、`source_status 4`、`review_events 0`、`admin_auth_limits 1`；同步改为分批写入；24 项测试、lint、build 通过。网站查询和审核写入仍使用本地 SQLite，尚未宣称完成全面运行时切换
 - [ ] 配置后台定时任务
 - [ ] 配置 HTTPS
 - [ ] 配置错误监控
@@ -143,6 +144,6 @@
 **M0：本地原型稳定、可回退、可继续扩展**
 
 - 状态：进行中
-- 下一步：建立 Supabase 运行时访问适配层，再配置后台定时任务
+- 下一步：配置后台定时任务，再评估网站查询和审核写入切换
 - 已取消：试点高校 5（本阶段不再执行）
 - 产品规则：采集即展示，所有未审核记录必须标记“待人工核验”并保留官方公告链接
