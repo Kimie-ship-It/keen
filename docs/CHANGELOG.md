@@ -61,3 +61,4 @@
 - 完成 Supabase 运行时同步适配层的真实连接验证：使用 Transaction Pooler 连接成功，未在代码或日志中保存数据库密码。
 - 本地 SQLite 七张表已同步到 Supabase，云端核对数量为 `jobs 4919`、`job_locations 13761`、`job_industries 9786`、`source_runs 30`、`source_status 4`、`review_events 0`、`admin_auth_limits 1`。
 - 同步脚本的明细关联数据改为分批写入，避免逐条请求在长任务中触发连接重置；测试、lint 和生产构建全部通过。
+- Windows 每日任务已重新安装并手动触发验证：四所高校采集、本地每日备份、Supabase 同步和日志写入均成功，任务结果码为 0；当前任务依赖本机交互式登录会话，尚不等同于云端定时服务。
