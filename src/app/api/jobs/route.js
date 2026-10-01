@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { openRuntimeDatabase, closeRuntimeDatabase } from "../../../../scripts/runtime-db.mjs";
 import { parsePagination } from "../../../../scripts/query.mjs";
 import { listJobs, QueryValidationError } from "../../../../scripts/jobs-service.mjs";
+import { reportError } from "../../../../scripts/monitor.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,8 @@ export async function GET(request) {
     return NextResponse.json((await listJobs(db, { q, source, city, industry, deadline, limit, offset })));
   } catch (error) {
     if (error instanceof QueryValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
-    return NextResponse.json({ error: "招聘数据暂时无法读取，请稍后重试" }, { status: 503 });
+    const event = await reportError(error, { operation: "jobs.list", method: "GET" });
+    return NextResponse.json({ error: "招聘数据暂时无法读取，请稍后重试" }, { status: 503, headers: { "X-Error-Id": event.id } });
   } finally {
     closeRuntimeDatabase(db);
   }

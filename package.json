@@ -25,6 +25,8 @@
     "backup:supabase:verify": "node scripts/supabase-backup.mjs --verify",
     "restore:supabase": "node scripts/supabase-restore.mjs",
     "test:cloud-backup": "node --test tests/cloud-backup.integration.mjs",
+    "monitor:check": "node scripts/monitor-health.mjs",
+    "monitor:errors": "node scripts/monitor-health.mjs --errors",
     "sync:supabase": "node scripts/supabase-sync.mjs",
     "check:supabase": "node scripts/supabase-sync.mjs --check",
     "setup:supabase": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-supabase.ps1",
@@ -32,6 +34,7 @@
     "test": "node --test tests/*.test.mjs",
     "test:supabase": "node --test tests/supabase.integration.mjs",
     "test:runtime-http": "node tests/runtime-http.integration.mjs",
+    "test:monitor-http": "node tests/monitor-http.integration.mjs",
     "setup:local": "node scripts/setup-local.mjs",
     "setup:feishu": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-feishu.ps1",
     "test:feishu": "node scripts/test-feishu.mjs"

@@ -8,6 +8,12 @@ export function collectBuaa(options = {}) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  const result = await collectBuaa();
-  console.log(`已采集${result.source}招聘信息 ${result.count} 条，新增 ${result.newCount} 条`);
+  try {
+    const result = await collectBuaa();
+    console.log(`已采集${result.source}招聘信息 ${result.count} 条，新增 ${result.newCount} 条`);
+  } catch (error) {
+    const { reportError } = await import("./monitor.mjs");
+    await reportError(error, { operation: "collection", source: "buaa" });
+    process.exitCode = 1;
+  }
 }

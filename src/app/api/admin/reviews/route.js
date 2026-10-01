@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { openRuntimeDatabase, closeRuntimeDatabase } from "../../../../../scripts/runtime-db.mjs";
 import { checkAdminAuthorization, listPendingReviews, readBearerToken, updateReview, validateReviewInput } from "../../../../../scripts/runtime-reviews.mjs";
 import { parsePagination } from "../../../../../scripts/query.mjs";
+import { reportError } from "../../../../../scripts/monitor.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +23,9 @@ export async function GET(request) {
     try { pagination = parsePagination(new URL(request.url).searchParams); }
     catch (error) { return NextResponse.json({ error: error.message }, { status: 400 }); }
     return NextResponse.json((await listPendingReviews(db, pagination)));
-  } catch {
-    return NextResponse.json({ error: "管理服务暂时不可用，请稍后重试" }, { status: 503 });
+  } catch (error) {
+    const event = await reportError(error, { operation: "admin.read", method: "GET" });
+    return NextResponse.json({ error: "管理服务暂时不可用，请稍后重试" }, { status: 503, headers: { "X-Error-Id": event.id } });
   } finally { closeRuntimeDatabase(db); }
 }
 
@@ -38,7 +40,8 @@ export async function POST(request) {
     try { validateReviewInput(input); } catch (error) { return NextResponse.json({ error: error.message }, { status: 400 }); }
     if (!(await updateReview(db, input))) return NextResponse.json({ error: "记录不存在" }, { status: 404 });
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ error: "管理服务暂时不可用，请稍后重试" }, { status: 503 });
+  } catch (error) {
+    const event = await reportError(error, { operation: "admin.write", method: "POST" });
+    return NextResponse.json({ error: "管理服务暂时不可用，请稍后重试" }, { status: 503, headers: { "X-Error-Id": event.id } });
   } finally { closeRuntimeDatabase(db); }
 }

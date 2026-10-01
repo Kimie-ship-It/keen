@@ -1,5 +1,6 @@
 import { collectConfiguredSources } from "./collector-registry.mjs";
-import { notifyFailure } from "./notify.mjs";
+import { notify } from "./notify.mjs";
+import { reportError } from "./monitor.mjs";
 
 const interval = Number(process.env.COLLECT_INTERVAL_MS || 60 * 60 * 1000);
 let stopping = false;
@@ -11,12 +12,20 @@ process.on("SIGTERM", stop);
 if (!Number.isFinite(interval) || interval < 60000) throw new Error("定时间隔不得小于 60 秒");
 
 async function run() {
-  const summary = await collectConfiguredSources();
-  for (const result of summary.results) console.log(result);
-  if (summary.failures.length) {
-    const error = new Error(summary.failures.map((failure) => `${failure.source}：${failure.error.message}`).join("；"));
-    console.error("采集失败：", error.message);
-    try { await notifyFailure(error); } catch (noticeError) { console.error("通知失败：", noticeError?.message || noticeError); }
+  try {
+    const summary = await collectConfiguredSources();
+    for (const result of summary.results) console.log(result);
+    const ids = [];
+    for (const failure of summary.failures) {
+      const event = await reportError(failure.error, { operation: "collection", source: failure.id });
+      ids.push(event.id);
+    }
+    if (ids.length && process.env.FEISHU_WEBHOOK_URL) {
+      try { await notify("校招雷达采集异常，请查看故障记录：" + ids.join("；")); }
+      catch (error) { await reportError(error, { operation: "notification" }); }
+    }
+  } catch (error) {
+    await reportError(error, { operation: "daily.pipeline" });
   }
 }
 

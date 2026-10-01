@@ -1,5 +1,6 @@
 import pg from "pg";
 import { SUPABASE_CA } from "./supabase-ca.mjs";
+import { reportError } from "./monitor.mjs";
 
 export function createPostgresPool(env = process.env) {
   if (env.VERCEL === "1" && env.SUPABASE_SSL_INSECURE === "1") throw new Error("Insecure database TLS is forbidden on Vercel");
@@ -16,6 +17,6 @@ export function createPostgresPool(env = process.env) {
     query_timeout: 30000, statement_timeout: 25000,
     ssl: { rejectUnauthorized: env.SUPABASE_SSL_INSECURE !== "1", ...(ca ? { ca } : {}) },
   });
-  pool.on("error", () => console.error("PostgreSQL idle connection lost"));
+  pool.on("error", (error) => { void reportError(error, { operation: "postgres.connection" }); });
   return pool;
 }

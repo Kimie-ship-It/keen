@@ -61,5 +61,10 @@ export async function createRuntimeBackup(options = {}) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  console.log(JSON.stringify(await createRuntimeBackup(), null, 2));
+  try { console.log(JSON.stringify(await createRuntimeBackup(), null, 2)); }
+  catch (error) {
+    const { reportError } = await import("./monitor.mjs");
+    await reportError(error, { operation: "backup.local" });
+    process.exitCode = 1;
+  }
 }

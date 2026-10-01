@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { openRuntimeDatabase, closeRuntimeDatabase } from "../../../../../scripts/runtime-db.mjs";
 import { getSavedJobs } from "../../../../../scripts/jobs-service.mjs";
+import { reportError } from "../../../../../scripts/monitor.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -42,8 +43,9 @@ export async function GET(request) {
         "Cache-Control": "no-store",
       },
     });
-  } catch {
-    return NextResponse.json({ error: "收藏导出暂时不可用，请稍后重试" }, { status: 503 });
+  } catch (error) {
+    const event = await reportError(error, { operation: "jobs.export", method: "GET" });
+    return NextResponse.json({ error: "收藏导出暂时不可用，请稍后重试" }, { status: 503, headers: { "X-Error-Id": event.id } });
   } finally {
     closeRuntimeDatabase(db);
   }

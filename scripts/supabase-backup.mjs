@@ -259,7 +259,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (process.argv[2] && process.argv[2] !== "--verify") throw new Error("Unknown backup command");
     const result = process.argv[2] === "--verify" ? await verifyCloudBackup(process.argv[3]) : await createCloudBackup();
     console.log(JSON.stringify(result, null, 2));
-  } catch {
+  } catch (error) {
+    const { reportError } = await import("./monitor.mjs");
+    await reportError(error, { operation: "backup.cloud" });
     console.error("Cloud backup/restore check failed; confirm configuration, key and connectivity. No production restore was performed.");
     process.exitCode = 1;
   }

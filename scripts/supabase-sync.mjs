@@ -85,6 +85,12 @@ export async function checkSupabaseConnection() {
 }
 
 if (process.argv[1] && process.argv[1].endsWith("supabase-sync.mjs")) {
-  const result = process.argv.includes("--check") ? await checkSupabaseConnection() : await syncLocalToSupabase();
-  console.log(JSON.stringify(result));
+  try {
+    const result = process.argv.includes("--check") ? await checkSupabaseConnection() : await syncLocalToSupabase();
+    console.log(JSON.stringify(result));
+  } catch (error) {
+    const { reportError } = await import("./monitor.mjs");
+    await reportError(error, { operation: "database.sync" });
+    process.exitCode = 1;
+  }
 }

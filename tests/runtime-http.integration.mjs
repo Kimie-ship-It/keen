@@ -10,16 +10,21 @@ async function request(path, options) {
 }
 
 if (process.argv.includes("--outage")) {
-  for (const path of ["/api/jobs", "/api/jobs/export?ids=test", "/api/admin/reviews"]) {
-    const response = await request(path, { headers });
+  const ids = new Set();
+  for (const [path, method] of [["/api/jobs", "GET"], ["/api/jobs/export?ids=test", "GET"], ["/api/admin/reviews", "GET"], ["/api/admin/reviews", "POST"]]) {
+    const response = await request(path, { headers, method });
     assert.equal(response.status, 503);
+    const id = response.headers.get("x-error-id");
+    assert.match(id, /^[a-f0-9-]{36}$/);
+    ids.add(id);
     const body = await response.text();
     for (const secret of [process.env.SUPABASE_DB_URL, process.env.ADMIN_TOKEN]) {
       if (secret) assert.ok(!body.includes(secret));
     }
     assert.ok(!/postgresql|127\.0\.0\.1|ECONNREFUSED/i.test(body));
   }
-  console.log("Database outage: three APIs return sanitized 503; no SQLite fallback.");
+  assert.equal(ids.size, 4);
+  console.log(JSON.stringify({ outageChecks: "passed", errorIds: [...ids], requests: 4 }));
 } else {
   assert.equal(storageMode(), "supabase");
   const response = await request("/api/jobs?limit=5");
