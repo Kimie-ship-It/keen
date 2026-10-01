@@ -2,6 +2,7 @@
 
 ## 2026-09-30
 
+- 增加可选 Supabase 同步适配器：`scripts/supabase-sync.mjs` 使用受控 PostgreSQL 连接池，在本地每日采集和备份成功后同步七张业务表；增加 `sync:supabase`、`check:supabase` 命令和 `SUPABASE_DB_URL` 配置。当前未配置线上连接字符串，网站查询和审核写入仍使用 SQLite，未将适配器误标记为线上切换完成。
 - 完成本地备份导入与线上核对：将 `campus-jobs-import` 中剩余的 `source_status.csv`（4 条）和 `admin_auth_limits.csv`（1 条）导入 Supabase 测试项目；SQL 核对七张表结果为 `jobs 4882`、`job_locations 13761`、`job_industries 9714`、`source_runs 26`、`source_status 4`、`review_events 0`、`admin_auth_limits 1`，与本地 CSV 备份一致。下一步改为配置后台定时任务。
 - 校正线上部署顺序：当前运行时仍直接使用本地 SQLite，若先配置云端定时任务会在临时环境中采集后丢失；因此在后台定时任务前增加“建立 Supabase 运行时访问适配层”步骤。
 

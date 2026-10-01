@@ -125,12 +125,12 @@
   - 验证：新增 `supabase/migrations/0001_initial_schema.sql`，覆盖招聘、地点、行业、来源运行、来源状态、审核日志和管理限速表及索引；仅完成脚本准备，尚未连接线上项目或导入生产数据
 - [x] 创建 Supabase 测试项目并导入迁移
   - 完成日期：2026-09-30
-  - 验证：已创建免费测试项目 `Kimie-ship-It's Project`，项目引用为 `hogystsoivfmexdixdmi`；SQL 迁移执行成功；7 张目标表全部存在，7 张表的 RLS 均为 `true`；尚未导入本地招聘数据
+  - 验证：已创建免费测试项目 `Kimie-ship-It's Project`，项目引用为 `hogystsoivfmexdixdmi`；SQL 迁移执行成功；7 张目标表全部存在，7 张表的 RLS 均为 `true`
 - [x] 导入本地备份并核对数据
   - 完成日期：2026-09-30
   - 验证：已将本地 CSV 导入 Supabase 测试项目；SQL 核对结果为 `jobs 4882`、`job_locations 13761`、`job_industries 9714`、`source_runs 26`、`source_status 4`、`review_events 0`、`admin_auth_limits 1`，与本地备份一致；7 张表仍保持 RLS 开启
 - [ ] 建立 Supabase 运行时访问适配层
-  - 说明：当前网站和采集器仍使用本地 SQLite；必须先让网站查询、审核写入和每日采集写入 Supabase，再配置云端定时任务
+  - 当前进度：已增加 `scripts/supabase-sync.mjs` 和 `sync:supabase`/`check:supabase` 命令；每日采集在配置 `SUPABASE_DB_URL` 后会在本地备份后同步七张表。网站查询、审核写入尚未全面切换，仍需真实连接字符串和端到端验证后才能勾选
 - [ ] 配置后台定时任务
 - [ ] 配置 HTTPS
 - [ ] 配置错误监控

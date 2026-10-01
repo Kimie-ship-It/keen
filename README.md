@@ -93,6 +93,7 @@ npm run schedule:install
 - `COLLECT_TIMEOUT_MS`：单次请求超时，默认 15000 毫秒。
 - `COLLECT_RETRIES`：请求重试次数，默认 3 次。
 - `COLLECT_INTERVAL_MS`：常驻采集模式的间隔，默认 1 小时。
+- `SUPABASE_DB_URL`：可选的 Supabase PostgreSQL 连接字符串。只写入本机 `.env.local` 或线上密钥管理器，不要提交到 Git。配置后，每日采集成功并完成本地备份后会同步七张业务表；未配置时继续使用本地 SQLite。
 
 未配置飞书 webhook 时采集照常运行，只是不发送日报和故障提醒。
 
@@ -135,4 +136,4 @@ npm run build
 
 ## 下一阶段
 
-当前已建立正式 Git 远程仓库 `https://github.com/Kimie-ship-It/keen.git`，并验证本地 `master` 与 GitHub `origin/master` 指向同一提交。线上数据库已选定为 Supabase PostgreSQL，测试项目已创建并成功导入 `supabase/migrations/0001_initial_schema.sql`；本地备份已导入并通过 SQL 数量核对：`jobs 4882`、`job_locations 13761`、`job_industries 9714`、`source_runs 26`、`source_status 4`、`review_events 0`、`admin_auth_limits 1`，7 张表已启用 RLS。第五所试点高校接入已按当前阶段安排取消，真实飞书机器人送达验证仍需用户之后创建机器人并提供本机配置时再执行。当前网站和采集器仍使用本地 SQLite，下一步先建立 Supabase 运行时访问适配层，再配置后台定时任务；云端定时采集尚未启用。上线前还需要访问日志、备份恢复、隐私说明和高校来源下架机制。
+当前已建立正式 Git 远程仓库 `https://github.com/Kimie-ship-It/keen.git`，并验证本地代码可提交到该远程；线上数据库已选定为 Supabase PostgreSQL，测试项目已创建并成功导入 `supabase/migrations/0001_initial_schema.sql`，初始导入核对基线为 `jobs 4882`、`job_locations 13761`、`job_industries 9714`、`source_runs 26`、`source_status 4`、`review_events 0`、`admin_auth_limits 1`，7 张表已启用 RLS。第五所试点高校接入已按当前阶段安排取消，真实飞书机器人送达验证仍需用户之后创建机器人并提供本机配置时再执行。当前网站查询和采集主流程仍以本地 SQLite 为主；已增加可选的 `SUPABASE_DB_URL` 同步适配器，配置连接字符串后每日采集会在本地备份后同步七张表。网站查询全面切换到 Supabase、云端定时任务、HTTPS、监控、线上备份恢复和真实线上访问验证仍未完成。
