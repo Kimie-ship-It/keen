@@ -15,6 +15,7 @@
     "collect:nankai": "node scripts/collect-nankai.mjs",
     "collect:watch": "node scripts/schedule-collector.mjs",
     "collect:daily": "node scripts/collect-daily.mjs",
+    "collect:cloud": "node scripts/cloud-collector.mjs",
     "enrich:locations": "node scripts/enrich-locations.mjs",
     "enrich:industries": "node scripts/enrich-industries.mjs",
     "backup:data": "node scripts/runtime-backup.mjs",

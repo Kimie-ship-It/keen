@@ -35,10 +35,15 @@ async function responseJson(response, step) {
   return data;
 }
 
-async function currentToken(path, request, now) {
+export async function readOffsiteAuthorization(path) {
+  path = credentialPath({ BAIDU_OFFSITE_CREDENTIAL_FILE: path });
   const stat = await lstat(path);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 65536) throw new Error("Invalid Baidu authorization file");
-  const state = credentials(JSON.parse(await readFile(path, "utf8")));
+  return credentials(JSON.parse(await readFile(path, "utf8")));
+}
+
+async function currentToken(path, request, now) {
+  const state = await readOffsiteAuthorization(path);
   if (state.expiresAt - now > 5 * 60 * 1000) return state;
   const url = new URL("https://openapi.baidu.com/oauth/2.0/token");
   url.search = new URLSearchParams({ grant_type: "refresh_token", refresh_token: state.refreshToken, client_id: state.clientId, client_secret: state.clientSecret }).toString();
