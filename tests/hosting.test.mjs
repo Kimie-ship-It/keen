@@ -12,7 +12,7 @@ const valid = { VERCEL: "1", CAMPUS_JOBS_STORAGE: "supabase", SUPABASE_DB_URL: "
 test("hosting rejects missing storage, TLS exceptions and exposed secrets", () => {
   validateHostingConfig(valid);
   assert.throws(() => storageMode({ VERCEL: "1" }), /requires Supabase/);
-  for (const overrides of [{ CAMPUS_JOBS_STORAGE: "sqlite" }, { SUPABASE_SSL_INSECURE: "1" }, { SUPABASE_DB_URL: "" }, { ADMIN_TOKEN: "short" }, { NEXT_PUBLIC_ADMIN_TOKEN: "secret" }]) {
+  for (const overrides of [{ CAMPUS_JOBS_STORAGE: "sqlite" }, { SUPABASE_SSL_INSECURE: "1" }, { SUPABASE_DB_URL: "" }, { ADMIN_TOKEN: "short" }, { NEXT_PUBLIC_ADMIN_TOKEN: "secret" }, { NEXT_PUBLIC_SUPABASE_BACKUP_KEY: "secret" }, { NEXT_PUBLIC_SUPABASE_RESTORE_DB_URL: "secret" }]) {
     assert.throws(() => validateHostingConfig({ ...valid, ...overrides }));
   }
   assert.throws(() => validateHostingConfig({ ...valid, SUPABASE_DB_URL: "sensitive malformed value" }), (error) => !error.message.includes("sensitive"));

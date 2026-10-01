@@ -3,6 +3,7 @@ import { collectConfiguredSources } from "./collector-registry.mjs";
 import { notify, notifyFailure } from "./notify.mjs";
 import { createRuntimeBackup } from "./runtime-backup.mjs";
 import { syncLocalToSupabase } from "./supabase-sync.mjs";
+import { createCloudBackup } from "./supabase-backup.mjs";
 
 const summary = await collectConfiguredSources();
 for (const result of summary.results) console.log(JSON.stringify(result));
@@ -25,6 +26,16 @@ if (summary.results.length) {
   const message = summary.results.map((result) => `${result.source}采集 ${result.count} 条，新增 ${result.newCount} 条`).join("；");
   try { await notify(`校招雷达日报：${message}。`); }
   catch (error) { console.error("采集成功，但通知失败：", error.message); }
+}
+// Cloud reviews change independently of collection success; back them up even if all collectors fail.
+if (process.env.SUPABASE_DB_URL || process.env.DATABASE_URL) {
+  try { console.log(JSON.stringify({ supabaseBackup: await createCloudBackup() })); }
+  catch {
+    console.error("Supabase backup failed; existing backups and production data were not overwritten.");
+    process.exitCode = 1;
+    try { await notifyFailure(new Error("Supabase backup failed; check local configuration and database connectivity.")); }
+    catch { console.error("Cloud backup failure notification could not be delivered."); }
+  }
 }
 if (summary.failures.length) {
   const error = new Error(summary.failures.map((failure) => `${failure.source}：${failure.error.message}`).join("；"));

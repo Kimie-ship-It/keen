@@ -10,6 +10,6 @@ export function validateHostingConfig(env = process.env) {
   if (!["postgres:", "postgresql:"].includes(url.protocol) || !url.hostname || !url.username || !url.password) throw new Error("Invalid database configuration");
   if (!env.ADMIN_TOKEN || env.ADMIN_TOKEN.trim().length < 24) throw new Error("ADMIN_TOKEN must have at least 24 characters");
   for (const key of Object.keys(env)) {
-    if (key.startsWith("NEXT_PUBLIC_") && /(?:ADMIN_TOKEN|DATABASE_URL|SUPABASE_DB_URL|FEISHU_)/.test(key)) throw new Error("Server secrets must not use NEXT_PUBLIC_ variables");
+    if (key.startsWith("NEXT_PUBLIC_") && /(?:ADMIN_TOKEN|DATABASE_URL|SUPABASE_(?:DB_URL|BACKUP_KEY|RESTORE_DB_URL)|FEISHU_)/.test(key)) throw new Error("Server secrets must not use NEXT_PUBLIC_ variables");
   }
 }

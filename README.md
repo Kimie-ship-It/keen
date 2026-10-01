@@ -80,7 +80,7 @@ npm run schedule:install
 3. 选择“核验通过”或“隐藏”。
 
 管理页本身可以访问，但读取待审核数据和修改状态都必须通过管理口令。口令只保存在当前页面内存中，不写入浏览器存储。
-管理页还显示最近 20 条审核操作；全部历史记录保存在当前网站数据库的 `review_events` 表中。Supabase 模式下日志保存在云端，不包含在当前 SQLite 备份中；云端备份与恢复仍待配置。当前使用共用口令，日志只能标记“管理员”，无法区分具体人员。
+管理页还显示最近 20 条审核操作；全部历史记录保存在当前网站数据库的 `review_events` 表中。Supabase 模式下日志保存在云端，不包含在 SQLite 备份中；新增的七张业务表加密备份包含云端审核及审计，保存在本机，异地副本仍待配置。当前使用共用口令，日志只能标记“管理员”，无法区分具体人员。
 管理接口对连续错误口令限速：15 分钟内达到 5 次后错误请求返回 429；正确口令可清除失败计数。当前采用全局计数，线上部署时还需入口层按请求来源限速。
 
 ## 配置
@@ -97,6 +97,9 @@ npm run schedule:install
 - `CAMPUS_JOBS_STORAGE`：网站数据库模式，允许 `sqlite`（未指定时的默认值）或 `supabase`。本机已设为 `supabase`，配置后需要重启网站；云端连接失败时接口返回 503，不自动回退到 SQLite。
 - `SUPABASE_SSL_CA`：可选的可信 CA 证书 PEM 内容，可用 `\n` 表示换行。Supabase 主机默认使用随代码打包的官方公开 CA，其他数据库使用系统信任链；连接地址中的 SSL 参数不会覆盖验证策略。
 - `SUPABASE_SSL_INSECURE`：仅用于本机诊断的证书校验例外，`1` 关闭校验，默认不开启。本机已设为 `0` 并使用官方 CA 连接成功；托管构建和 Vercel 运行时都拒绝关闭校验。
+- `SUPABASE_BACKUP_KEY`：`setup:backup` 生成的业务备份加密密钥，仅保存在本机安全配置中。丢失后无法恢复已有备份，禁止公开或随意替换。
+- `SUPABASE_BACKUP_RETENTION_COUNT`：保留有效加密备份的数量，默认 14。
+- `SUPABASE_RESTORE_DB_URL`：仅实际恢复时配置的独立空库地址，不改变网站连接；禁止使用当前源数据库。
 
 未配置飞书 webhook 时采集照常运行，只是不发送日报和故障提醒。
 
@@ -134,9 +137,11 @@ npm run build
 - `npm run backup:step -- "步骤名称"`：创建一次步骤备份。它会提交当前代码到本地 Git，并把数据库和采集快照备份到项目外的 `campus-jobs-backups` 文件夹。
 - `npm run backup:data`：手动创建运行数据备份。每日采集成功后也会自动执行，默认保留最近 14 份，可通过 `BACKUP_RETENTION_COUNT` 调整。
 - `npm run backup:verify`：把最新备份恢复到临时目录并检查完整性和记录数量，不覆盖正在使用的数据库。
+- `npm run backup:supabase`：手动生成七张云端业务表的加密快照，每日采集流程也会尝试生成。
+- `npm run backup:supabase:verify`：在 PostgreSQL 临时表中恢复并比较全部内容，结束后回滚，不覆盖正式数据。
 - `data/logs/`：采集运行日志，记录任务实际运行过程，不等同于代码备份。
 
-备份分为两部分：Git 用于回退代码，SQLite 数据库备份用于恢复本地采集数据。当前 `backup:step` 和 `backup:data` 不备份 Supabase 中的审核、审计和限速数据；配置云端备份与恢复仍是清单中的待办。修改完成并通过测试后，应立即执行一次 `backup:step`。
+Git 用于回退代码，SQLite 备份用于恢复本地采集数据；`backup:step` 和 `backup:data` 不包含云端审核、审计和限速数据。新增 Supabase 加密快照覆盖七张业务表，但不是整个项目备份，也没有异地副本。密钥和备份必须分别保护，恢复流程与未完成边界见 `docs/CLOUD-BACKUP-RECOVERY.md`。修改完成并通过测试后，应立即执行一次 `backup:step`。
 
 ## 主要目录
 
@@ -149,4 +154,4 @@ npm run build
 
 ## 下一阶段
 
-当前已建立正式 Git 远程仓库 `https://github.com/Kimie-ship-It/keen.git`，Supabase 测试项目已导入初始迁移和数据，7 张表均已启用 RLS。本机网站查询和审核已选择 Supabase，采集仍在本地 SQLite 完成并每日同步五张采集表。第五所高校本阶段已取消，真实飞书机器人暂缓。首选 Vercel 托管，账号验证申请已提交，尚未取得公网地址。官方数据库 CA、托管构建检查和部署配置已准备；具体发布步骤见 `docs/HOSTING-DEPLOYMENT.md`。下一步在账号通过后配置生产密钥并验证 HTTPS，再补齐错误监控、云端备份恢复、隐私和下架机制；云端定时采集也尚未部署。
+当前已建立正式 Git 远程仓库 `https://github.com/Kimie-ship-It/keen.git`，Supabase 测试项目已导入初始迁移和数据，7 张表均已启用 RLS。本机网站查询和审核已选择 Supabase，采集仍在本地 SQLite 完成并每日同步五张采集表。第五所高校本阶段已取消，真实飞书机器人暂缓。首选 Vercel 托管，账号验证申请已提交，尚未取得公网地址。官方数据库 CA、托管构建检查和部署配置已准备；具体发布步骤见 `docs/HOSTING-DEPLOYMENT.md`。七张业务表加密备份与隔离恢复演练已实现，异地副本及独立项目恢复验收未完成。下一步在账号通过后配置生产密钥并验证 HTTPS；等待期间可继续错误监控、隐私和下架机制。云端定时采集尚未部署。
