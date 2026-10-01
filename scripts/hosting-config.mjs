@@ -1,6 +1,8 @@
 import { storageMode } from "./runtime-db.mjs";
+import { publicContact } from "./privacy-config.mjs";
 
 export function validateHostingConfig(env = process.env) {
+  publicContact(env);
   if (storageMode(env) !== "supabase") throw new Error("Set CAMPUS_JOBS_STORAGE=supabase before hosting");
   if (env.SUPABASE_SSL_INSECURE === "1") throw new Error("Disable the insecure database TLS exception before hosting");
   const connectionString = env.SUPABASE_DB_URL || env.DATABASE_URL;

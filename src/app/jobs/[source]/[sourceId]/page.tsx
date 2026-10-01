@@ -48,7 +48,7 @@ export default async function JobDetailPage({ params }: PageProps) {
           <section className={styles.sources}><div><span className={styles.kicker}>OFFICIAL SOURCES</span><h2>官方公告入口</h2></div>{links.map((link: SourceLink) => <a className={styles.primaryButton} key={`${link.source}:${link.sourceId}`} href={officialLink(link.detailUrl)} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} />查看{link.source}公告</a>)}</section>
         </article>
       </main>
-      <footer className={styles.footer}><span>校招雷达</span><span>数据来源于公开高校就业信息，请以官方公告为准。</span></footer>
+      <footer className={styles.footer}><span>校招雷达</span><span>数据来源于公开高校就业信息，请以官方公告为准。</span><Link href="/privacy">隐私与来源处理</Link></footer>
     </div>;
   } finally {
     closeRuntimeDatabase(db);

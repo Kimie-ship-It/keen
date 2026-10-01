@@ -7,6 +7,8 @@ import { openDatabase, closeDatabase } from "./db.mjs";
 import { getSource, SOURCES } from "./sources.mjs";
 import { extractLocations, extractNankaiLocations } from "./locations.mjs";
 import { requestJson, requestText, sleep } from "./collection.mjs";
+import { collectionAllowed } from "./source-controls.mjs";
+import { closeRuntimePool } from "./runtime-db.mjs";
 
 const USER_AGENT = "CampusJobsRadar/0.1";
 const TIMEOUT_MS = Number(process.env.COLLECT_TIMEOUT_MS || 15000);
@@ -93,24 +95,33 @@ async function enrichSource(db, sourceId, reference, options = {}) {
   return { source: source.name, checked, locations, failed };
 }
 
-export async function enrichLocations({ ids = Object.keys(SOURCES), dbPath, fetchImpl = fetch, wait = sleep, maxRows } = {}) {
+export async function enrichLocations({ ids = Object.keys(SOURCES), dbPath, fetchImpl = fetch, wait = sleep, maxRows, allowed = collectionAllowed } = {}) {
+  const active = [];
+  for (const id of ids) if (await allowed(id)) active.push(id);
+  if (!active.length) return [];
   const db = await openDatabase(dbPath);
   try {
     let reference = [];
     try {
-      reference = await fetchPlatformReference(fetchImpl);
+      if (await allowed("buaa")) reference = await fetchPlatformReference(fetchImpl);
       await mkdir(new URL("../data/", import.meta.url), { recursive: true });
       await writeFile(new URL("../data/location-reference.json", import.meta.url), JSON.stringify({ fetchedAt: new Date().toISOString(), locations: reference }, null, 2), "utf8");
     } catch (error) {
       console.warn(`城市字典获取失败，将仅使用结构化地点：${error.message}`);
     }
     const results = [];
-    for (const id of ids) results.push(await enrichSource(db, id, reference, { fetchImpl, wait, maxRows }));
+    for (const id of active) if (await allowed(id)) results.push(await enrichSource(db, id, reference, { fetchImpl, wait, maxRows }));
     return results;
   } finally { closeDatabase(db); }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  const results = await enrichLocations();
-  for (const result of results) console.log(JSON.stringify(result));
+  try {
+    const results = await enrichLocations();
+    for (const result of results) console.log(JSON.stringify(result));
+  } catch (error) {
+    const { reportError } = await import("./monitor.mjs");
+    await reportError(error, { operation: "collection" });
+    process.exitCode = 1;
+  } finally { await closeRuntimePool(); }
 }

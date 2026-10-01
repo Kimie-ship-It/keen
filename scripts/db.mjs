@@ -79,6 +79,15 @@ export async function openDatabase(path = DB_PATH) {
       window_started_at INTEGER NOT NULL,
       failures INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS source_controls (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL,
+      action TEXT NOT NULL CHECK (action IN ('restrict', 'restore')),
+      reason TEXT NOT NULL CHECK (reason IN ('source_request', 'privacy', 'copyright', 'inaccurate', 'resolved')),
+      actor TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_source_controls_source ON source_controls (source, id DESC);
   `);
   const columns = db.pragma("table_info(jobs)").map((column) => column.name);
   if (!columns.includes("review_status")) db.exec("ALTER TABLE jobs ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'");

@@ -127,10 +127,10 @@ test("source health checks missing, stale, future, and latest failed updates", (
 function healthFixture(overrides = {}) {
   const records = [];
   let closed = false;
-  const db = { prepare: () => ({ all: async () => freshRows(), get: async () => ({ count: 4919 }) }) };
+  const db = { prepare: (sql) => ({ all: async () => freshRows(), get: async () => sql.includes("source_controls") ? undefined : ({ count: 4919 }) }) };
   return {
     records, closed: () => closed,
-    options: { now: NOW, open: async () => db, close: () => { closed = true; }, latestBackup: async () => "fake.cjbackup", loadBackup: async () => ({ createdAt: new Date(NOW).toISOString() }), report: async (error, context) => { const event = createErrorEvent(error, context); records.push(event); return event; }, ...overrides },
+    options: { now: NOW, open: async () => db, close: () => { closed = true; }, latestBackup: async () => "fake.cjbackup", loadBackup: async () => ({ format: "campus-jobs-supabase-v2", tables: { source_controls: [] }, createdAt: new Date(NOW).toISOString() }), report: async (error, context) => { const event = createErrorEvent(error, context); records.push(event); return event; }, ...overrides },
   };
 }
 
@@ -166,13 +166,21 @@ test("empty database and unreadable backups are detected", async () => {
 test("stale backups and failed source updates make health degraded", async () => {
   const rows = freshRows();
   rows[1].last_status = "failed";
-  const fixture = healthFixture({ open: async () => ({ prepare: () => ({ all: () => rows, get: () => ({ count: 4919 }) }) }), loadBackup: async () => ({ createdAt: new Date(NOW - 37 * 3600000).toISOString() }) });
+  const fixture = healthFixture({ open: async () => ({ prepare: () => ({ all: () => rows, get: () => ({ count: 4919 }) }) }), loadBackup: async () => ({ format: "campus-jobs-supabase-v2", tables: { source_controls: [] }, createdAt: new Date(NOW - 37 * 3600000).toISOString() }) });
   const result = await checkHealth(fixture.options);
   assert.equal(result.status, "degraded");
   assert.equal(result.backup, "stale");
   assert.equal(result.sources[1].status, "failed");
   assert.deepEqual(fixture.records.map((event) => event.operation), ["health.sources", "health.backup"]);
   assert.equal(fixture.records[0].source, "bit");
+});
+
+test("legacy backups without withdrawal history are incomplete even when fresh", async () => {
+  const fixture = healthFixture({ loadBackup: async () => ({ format: "campus-jobs-supabase-v1", createdAt: new Date(NOW).toISOString() }) });
+  const result = await checkHealth(fixture.options);
+  assert.equal(result.backup, "incomplete");
+  assert.equal(result.status, "degraded");
+  assert.equal(fixture.records[0].operation, "health.backup");
 });
 
 function dailyFixture(overrides = {}) {

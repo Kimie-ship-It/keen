@@ -35,6 +35,7 @@
     "test:supabase": "node --test tests/supabase.integration.mjs",
     "test:runtime-http": "node tests/runtime-http.integration.mjs",
     "test:monitor-http": "node tests/monitor-http.integration.mjs",
+    "test:sources-http": "node tests/source-http.integration.mjs",
     "setup:local": "node scripts/setup-local.mjs",
     "setup:feishu": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-feishu.ps1",
     "test:feishu": "node scripts/test-feishu.mjs"

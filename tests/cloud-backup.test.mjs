@@ -4,8 +4,23 @@ import { mkdtemp, readdir, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKUP_TABLES, captureSnapshot, encodeBackup, decodeBackup, persistBackup, readBackup, restoreDrill, restoreEmptyTarget, assertSeparateRestoreTarget, latestCloudBackup } from "../scripts/supabase-backup.mjs";
+import { LEGACY_SCHEMA, schemaHash } from "../scripts/supabase-schema.mjs";
 
 const key = "1".repeat(64);
+
+test("legacy encrypted backups remain readable but cannot publish without withdrawal reconciliation", async () => {
+  const snapshot = await fixture();
+  snapshot.format = "campus-jobs-supabase-v1";
+  snapshot.schemaHash = schemaHash(LEGACY_SCHEMA);
+  delete snapshot.tables.source_controls;
+  assert.deepEqual(decodeBackup(encodeBackup(snapshot, key), key), snapshot);
+  const calls = [];
+  await assert.rejects(restoreEmptyTarget({ query: async (sql) => calls.push(sql) }, snapshot), /no source restrictions/);
+  assert.deepEqual(calls, []);
+  const envelope = JSON.parse(encodeBackup(snapshot, key));
+  envelope.format = "campus-jobs-supabase-v2";
+  assert.throws(() => decodeBackup(JSON.stringify(envelope), key), /verification failed/);
+});
 async function fixture(now = new Date("2026-10-01T00:00:00Z")) {
   return captureSnapshot({ query: async (sql) => {
     const name = sql.match(/FROM public\.(\w+)/)[1];

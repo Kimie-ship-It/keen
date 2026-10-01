@@ -20,6 +20,7 @@ export async function runDaily({ collect = collectConfiguredSources, backupLocal
   try { summary = await collect(); }
   catch (error) { await record(error, "daily.pipeline"); }
   for (const result of summary.results) log(JSON.stringify(result));
+  for (const skipped of summary.skipped || []) log(JSON.stringify({ collectionSkipped: skipped }));
   for (const failure of summary.failures) await record(failure.error, "collection", failure.id);
 
   const cloud = Boolean(env.SUPABASE_DB_URL || env.DATABASE_URL);

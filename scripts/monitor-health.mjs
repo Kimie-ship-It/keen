@@ -6,6 +6,7 @@ import { SOURCES } from "./sources.mjs";
 import { latestCloudBackup, readBackup } from "./supabase-backup.mjs";
 import { reportError, readErrorEvents } from "./monitor.mjs";
 import { notify } from "./notify.mjs";
+import { sourceIsRestricted } from "./source-controls.mjs";
 
 const MAX_AGE_MS = 36 * 60 * 60 * 1000;
 
@@ -28,7 +29,8 @@ export async function checkHealth({ now = Date.now(), open = openRuntimeDatabase
     if (!Number.isSafeInteger(count.count) || count.count < 1) throw new Error("Recruitment data unavailable");
     result.database = "ok";
     result.sources = evaluateSources(rows, now);
-    for (const source of result.sources.filter((source) => source.status !== "ok")) {
+    for (const source of result.sources) if (await sourceIsRestricted(db, source.id)) source.status = "paused";
+    for (const source of result.sources.filter((source) => !["ok", "paused"].includes(source.status))) {
       await report(new Error("Source requires attention"), { operation: "health.sources", source: source.id, category: source.status === "stale" ? "stale" : "internal", severity: "warning" });
     }
   } catch (error) { await report(error, { operation: "health.database" }); }
@@ -36,10 +38,11 @@ export async function checkHealth({ now = Date.now(), open = openRuntimeDatabase
   try {
     const snapshot = await loadBackup(await latestBackup());
     const age = now - Date.parse(snapshot.createdAt);
-    result.backup = age >= -5 * 60 * 1000 && age <= MAX_AGE_MS ? "ok" : "stale";
-    if (result.backup !== "ok") await report(new Error("Backup is stale"), { operation: "health.backup", category: "stale", severity: "warning" });
+    const coversControls = snapshot.format === "campus-jobs-supabase-v2" && Array.isArray(snapshot.tables?.source_controls);
+    result.backup = !coversControls ? "incomplete" : age >= -5 * 60 * 1000 && age <= MAX_AGE_MS ? "ok" : "stale";
+    if (result.backup !== "ok") await report(new Error("Backup requires attention"), { operation: "health.backup", category: result.backup === "stale" ? "stale" : "internal", severity: "warning" });
   } catch (error) { await report(error, { operation: "health.backup" }); }
-  if (result.database !== "ok" || result.backup !== "ok" || result.sources.some((source) => source.status !== "ok")) result.status = "degraded";
+  if (result.database !== "ok" || result.backup !== "ok" || result.sources.some((source) => !["ok", "paused"].includes(source.status))) result.status = "degraded";
   return result;
 }
 
@@ -55,7 +58,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         process.exitCode = 1;
         if (args[0] === "--notify") {
           if (!process.env.FEISHU_WEBHOOK_URL) console.log("Feishu delivery is not configured; no alert was sent.");
-          else await notify("校招雷达健康检查异常，请在本机查看故障记录。数据库：" + result.database + "；备份：" + result.backup + "；异常高校：" + result.sources.filter((source) => source.status !== "ok").map((source) => source.id).join("、"));
+          else await notify("校招雷达健康检查异常，请在本机查看故障记录。数据库：" + result.database + "；备份：" + result.backup + "；异常高校：" + result.sources.filter((source) => !["ok", "paused"].includes(source.status)).map((source) => source.id).join("、"));
         }
       }
     }

@@ -29,7 +29,7 @@ try {
   }
   assert.ok(ready, "Fault-test server must become ready");
   const ids = [];
-  const requests = [["/api/jobs?probe=" + secret, "GET", "jobs.list"], ["/api/jobs/export?ids=test", "GET", "jobs.export"], ["/api/admin/reviews", "GET", "admin.read"], ["/api/admin/reviews", "POST", "admin.write"]];
+  const requests = [["/api/jobs?probe=" + secret, "GET", "jobs.list"], ["/api/jobs/export?ids=test", "GET", "jobs.export"], ["/api/admin/reviews", "GET", "admin.read"], ["/api/admin/reviews", "POST", "admin.write"], ["/api/admin/sources", "GET", "sources.read"], ["/api/admin/sources", "POST", "sources.write"]];
   for (const [path, method, operation] of requests) {
     const response = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers: { Authorization: `Bearer ${process.env.ADMIN_TOKEN}`, "X-Probe-Secret": secret }, signal: AbortSignal.timeout(60000) });
     assert.equal(response.status, 503);
@@ -49,8 +49,8 @@ try {
   assert.ok(records.some((event) => event.operation === "server.request"), "Next.js uncaught rendering errors must be recorded");
   assert.ok(!JSON.stringify(records).includes(secret));
   assert.ok(!JSON.stringify(records).includes(process.env.ADMIN_TOKEN));
-  assert.equal(new Set(ids.map((event) => event.id)).size, 4);
-  console.log(JSON.stringify({ faultInjection: "passed", apiFailures: 4, uncaughtRendering: "recorded", sanitized: true }));
+  assert.equal(new Set(ids.map((event) => event.id)).size, 6);
+  console.log(JSON.stringify({ faultInjection: "passed", apiFailures: 6, uncaughtRendering: "recorded", sanitized: true }));
 } finally {
   if (server.exitCode === null) {
     const stopped = once(server, "exit");

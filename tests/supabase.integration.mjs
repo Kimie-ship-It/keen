@@ -1,7 +1,7 @@
 import "../scripts/config.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPostgresPool } from "../scripts/postgres.mjs";
@@ -11,6 +11,8 @@ import { listJobs, getJobDetail, getSavedJobs } from "../scripts/jobs-service.mj
 import { checkPostgresAuthorization, updatePostgresReview, listPostgresReviews } from "../scripts/postgres-reviews.mjs";
 import { createDedupeKey } from "../scripts/dedupe.mjs";
 import { syncRows } from "../scripts/supabase-sync.mjs";
+import { APP_SCHEMA } from "../scripts/supabase-schema.mjs";
+import { updateSourceControl, sourceIsRestricted } from "../scripts/source-controls.mjs";
 
 const source = "北京航空航天大学";
 const peer = "北京理工大学";
@@ -41,13 +43,13 @@ async function isolatedDatabase(action) {
     client.on("error", () => {});
     await client.query("BEGIN");
     await client.query("SET LOCAL search_path TO pg_temp");
-    const schema = await readFile(new URL("../supabase/migrations/0001_initial_schema.sql", import.meta.url), "utf8");
+    const schema = APP_SCHEMA;
     for (const statement of schema.split(";")) {
       const start = statement.search(/create table if not exists/i);
       if (start !== -1) await client.query(statement.slice(start).replace(/create table if not exists/i, "CREATE TEMP TABLE"));
     }
     const tables = (await client.query("SELECT c.relname, c.relpersistence FROM pg_class c WHERE c.relnamespace=pg_my_temp_schema() AND c.relkind='r'")).rows;
-    assert.equal(tables.length, 7);
+    assert.equal(tables.length, 8);
     assert.ok(tables.every((row) => row.relpersistence === "t"));
     // Nested application transactions use savepoints under a rollback-only test transaction.
     const scoped = { query: (sql, params) => {
@@ -124,12 +126,37 @@ test("真实 Supabase 重复同步不覆盖云端审核、审计和限速，拒�
     await syncRows(client, data);
     await updatePostgresReview(db, { source, sourceId: "integration-1", status: "hidden" });
     await client.query("INSERT INTO admin_auth_limits VALUES (1,100000,5)");
+    await updateSourceControl(db, { id: "bit", action: "restrict", reason: "privacy" });
     await syncRows(client, data);
     assert.equal((await client.query("SELECT review_status FROM jobs WHERE id=1")).rows[0].review_status, "hidden");
     assert.equal(Number((await client.query("SELECT COUNT(*) FROM review_events")).rows[0].count), 1);
     assert.equal((await client.query("SELECT failures FROM admin_auth_limits WHERE id=1")).rows[0].failures, 5);
+    assert.equal(await sourceIsRestricted(db, "bit"), true);
     await assert.rejects(syncRows(client, { ...data, jobs: data.jobs.map((row) => ({ ...row, id: row.id + 100 })) }), /IDs differ/);
     await assert.rejects(syncRows(client, { ...data, jobs: [] }), /empty/);
     assert.equal(Number((await client.query("SELECT COUNT(*) FROM job_locations")).rows[0].count), 2);
+  });
+});
+
+test("真实 Supabase 来源下架覆盖全部查询，审计写入失败不改变状态，恢复不恢复单条隐藏", { timeout: 180000 }, async () => {
+  await isolatedDatabase(async (db, client) => {
+    await syncRows(client, fixture());
+    await updatePostgresReview(db, { source, sourceId: "integration-4", status: "hidden" });
+    await updateSourceControl(db, { id: "bit", action: "restrict", reason: "source_request" });
+    const data = await listJobs(db);
+    assert.equal(data.stats.total, 2);
+    assert.equal(data.matchCount, 2);
+    assert.ok(data.sources.every((row) => row.source !== peer));
+    assert.ok(data.jobs.every((job) => job.sourceCount === 1 && job.sourceLinks.every((link) => link.source !== peer)));
+    assert.ok(data.locations.every((row) => row.location !== "上海"));
+    assert.equal(await getJobDetail(db, { source: peer, sourceId: "integration-2" }), null);
+    assert.equal((await getSavedJobs(db, [`${peer}:integration-2`, `${source}:integration-1`])).length, 1);
+    await client.query("ALTER TABLE source_controls ADD CONSTRAINT reject_restore_test CHECK(action <> 'restore')");
+    await assert.rejects(updateSourceControl(db, { id: "bit", action: "restore", reason: "resolved" }));
+    assert.equal(await sourceIsRestricted(db, "bit"), true);
+    await client.query("ALTER TABLE source_controls DROP CONSTRAINT reject_restore_test");
+    await updateSourceControl(db, { id: "bit", action: "restore", reason: "resolved" });
+    assert.equal(await sourceIsRestricted(db, "bit"), false);
+    assert.equal(await getJobDetail(db, { source, sourceId: "integration-4" }), null);
   });
 });

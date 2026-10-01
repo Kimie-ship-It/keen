@@ -1,4 +1,5 @@
 import { getSourceByName, officialUrlForSourceName } from "./sources.mjs";
+import { availableSourceSQL, visibleJobSQL } from "./source-controls.mjs";
 
 const STALE_AFTER_HOURS = 36;
 export class QueryValidationError extends Error {}
@@ -21,7 +22,7 @@ function dateExpressions(db) {
   };
 }
 const GROUP_KEY_SQL = `CASE WHEN dedupe_key <> '' AND EXISTS (
-  SELECT 1 FROM jobs AS peer WHERE peer.review_status <> 'hidden'
+  SELECT 1 FROM jobs AS peer WHERE ${visibleJobSQL("peer")}
     AND peer.dedupe_key=jobs.dedupe_key AND peer.source<>jobs.source
 ) THEN dedupe_key ELSE 'record:row:' || jobs.id END`;
 
@@ -69,12 +70,12 @@ export async function getJobDetail(db, { source, sourceId } = {}) {
   const sourceName = String(source || "").trim().slice(0, 100);
   const id = String(sourceId || "").trim().slice(0, 200);
   if (!sourceName || !id || !getSourceByName(sourceName)) return null;
-  const target = (await db.prepare(`SELECT ${GROUP_KEY_SQL} AS groupKey FROM jobs WHERE source=? AND source_id=? AND review_status <> 'hidden'`).get(sourceName, id));
+  const target = (await db.prepare(`SELECT ${GROUP_KEY_SQL} AS groupKey FROM jobs WHERE source=? AND source_id=? AND ${visibleJobSQL()}`).get(sourceName, id));
   if (!target) return null;
   const rows = (await db.prepare(`SELECT id, source, source_id AS sourceId, company, title, job_type AS jobType,
       published_at AS publishedAt, deadline, recruiting_numbers AS recruitingNumbers, detail_url AS detailUrl,
       first_seen_at AS firstSeenAt, review_status AS reviewStatus
-    FROM jobs WHERE review_status <> 'hidden' AND ${GROUP_KEY_SQL}=? ORDER BY published_at DESC, id DESC`).all(target.groupKey));
+    FROM jobs WHERE ${visibleJobSQL()} AND ${GROUP_KEY_SQL}=? ORDER BY published_at DESC, id DESC`).all(target.groupKey));
   return (await hydrateJob(db, rows));
 }
 
@@ -87,13 +88,13 @@ export async function getSavedJobs(db, keys = []) {
   });
   if (!valid.length) return [];
   const targets = await db.prepare(`SELECT source, source_id AS sourceId, ${GROUP_KEY_SQL} AS groupKey FROM jobs
-    WHERE review_status <> 'hidden' AND (${valid.map(() => "(source=? AND source_id=?)").join(" OR ")})`).all(...valid.flatMap((key) => [key.source, key.sourceId]));
+    WHERE ${visibleJobSQL()} AND (${valid.map(() => "(source=? AND source_id=?)").join(" OR ")})`).all(...valid.flatMap((key) => [key.source, key.sourceId]));
   const groups = [...new Set(targets.map((row) => row.groupKey))];
   if (!groups.length) return [];
   const rows = await db.prepare(`SELECT id, source, source_id AS sourceId, company, title, job_type AS jobType,
     published_at AS publishedAt, deadline, recruiting_numbers AS recruitingNumbers, detail_url AS detailUrl,
     first_seen_at AS firstSeenAt, review_status AS reviewStatus, ${GROUP_KEY_SQL} AS groupKey FROM jobs
-    WHERE review_status <> 'hidden' AND ${GROUP_KEY_SQL} IN (${groups.map(() => "?").join(",")}) ORDER BY published_at DESC, id DESC`).all(...groups);
+    WHERE ${visibleJobSQL()} AND ${GROUP_KEY_SQL} IN (${groups.map(() => "?").join(",")}) ORDER BY published_at DESC, id DESC`).all(...groups);
   const ids = rows.map((row) => row.id);
   const placeholders = ids.map(() => "?").join(",");
   const associations = {
@@ -119,8 +120,8 @@ export async function listJobs(db, { q = "", source = "", city = "", industry = 
   const deadlineName = String(deadline).trim().slice(0, 20);
   const validDeadlineFilters = new Set(["", "open", "due7", "due30", "expired", "unknown"]);
   if (sourceName && !getSourceByName(sourceName)) throw new QueryValidationError(`未知高校来源：${sourceName}`);
-  if (cityName && !(await db.prepare("SELECT 1 FROM job_locations WHERE location=? LIMIT 1").get(cityName))) throw new QueryValidationError(`未知工作城市：${cityName}`);
-  if (industryName && !(await db.prepare("SELECT 1 FROM job_industries WHERE industry=? LIMIT 1").get(industryName))) throw new QueryValidationError(`未知行业：${industryName}`);
+  if (cityName && !(await db.prepare(`SELECT 1 FROM job_locations JOIN jobs ON jobs.id=job_locations.job_id WHERE location=? AND ${visibleJobSQL()} LIMIT 1`).get(cityName))) throw new QueryValidationError(`未知工作城市：${cityName}`);
+  if (industryName && !(await db.prepare(`SELECT 1 FROM job_industries JOIN jobs ON jobs.id=job_industries.job_id WHERE industry=? AND ${visibleJobSQL()} LIMIT 1`).get(industryName))) throw new QueryValidationError(`未知行业：${industryName}`);
   if (!validDeadlineFilters.has(deadlineName)) throw new QueryValidationError(`未知截止日期筛选：${deadlineName}`);
   const like = `%${search}%`;
   const sourceFilter = sourceName ? " AND source = ?" : "";
@@ -147,7 +148,7 @@ export async function listJobs(db, { q = "", source = "", city = "", industry = 
       SELECT id, source, source_id AS sourceId, company, title, job_type AS jobType, published_at AS publishedAt,
         deadline, recruiting_numbers AS recruitingNumbers, detail_url AS detailUrl, first_seen_at AS firstSeenAt,
         review_status AS reviewStatus, ${groupKeySql} AS groupKey
-      FROM jobs WHERE review_status <> 'hidden' AND (? = '' OR company ${likeOperator} ? OR title ${likeOperator} ?)${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}
+      FROM jobs WHERE ${visibleJobSQL()} AND (? = '' OR company ${likeOperator} ? OR title ${likeOperator} ?)${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}
     ), ranked AS (
       SELECT *, ROW_NUMBER() OVER (PARTITION BY groupKey ORDER BY
         CASE reviewStatus WHEN 'approved' THEN 0 ELSE 1 END, publishedAt DESC, id DESC) AS rank
@@ -157,10 +158,10 @@ export async function listJobs(db, { q = "", source = "", city = "", industry = 
       detailUrl, firstSeenAt, reviewStatus, groupKey
     FROM ranked WHERE rank=1 ORDER BY publishedAt DESC, id DESC LIMIT ? OFFSET ?`).all(search, like, like, ...sourceParams, ...cityParams, ...industryParams, ...deadlineParams, limit, offset));
   const matchCount = (await db.prepare(`SELECT COUNT(DISTINCT ${groupKeySql}) AS total FROM jobs
-    WHERE review_status <> 'hidden' AND (? = '' OR company ${likeOperator} ? OR title ${likeOperator} ?)${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}`).get(search, like, like, ...sourceParams, ...cityParams, ...industryParams, ...deadlineParams)).total;
+    WHERE ${visibleJobSQL()} AND (? = '' OR company ${likeOperator} ? OR title ${likeOperator} ?)${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}`).get(search, like, like, ...sourceParams, ...cityParams, ...industryParams, ...deadlineParams)).total;
   const memberRows = rows.length ? (await db.prepare(`SELECT source, source_id AS sourceId, published_at AS publishedAt,
       detail_url AS detailUrl, id AS jobId, ${groupKeySql} AS groupKey
-    FROM jobs WHERE review_status <> 'hidden' AND ${groupKeySql} IN (${rows.map(() => "?").join(",")})${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}
+    FROM jobs WHERE ${visibleJobSQL()} AND ${groupKeySql} IN (${rows.map(() => "?").join(",")})${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}
     ORDER BY published_at DESC, id DESC`).all(...rows.map((row) => row.groupKey), ...sourceParams, ...cityParams, ...industryParams, ...deadlineParams)) : [];
   const locationRows = memberRows.length ? (await db.prepare(`SELECT job_id AS jobId, location FROM job_locations WHERE job_id IN (${memberRows.map(() => "?").join(",")}) ORDER BY location`).all(...memberRows.map((row) => row.jobId))) : [];
   const locationsByJob = new Map();
@@ -191,20 +192,20 @@ export async function listJobs(db, { q = "", source = "", city = "", industry = 
   });
   const stats = (await db.prepare(`SELECT COUNT(*) AS total, COUNT(DISTINCT source) AS sources,
     SUM(CASE WHEN ${dates.firstSeen} = ${dates.today} THEN 1 ELSE 0 END) AS todayNew,
-    SUM(CASE WHEN deadline <> '' AND ${dates.deadline} BETWEEN ${dates.today} AND ${dates.nextWeek} THEN 1 ELSE 0 END) AS dueSoon FROM jobs WHERE review_status <> 'hidden'${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}`).get(...sourceParams, ...cityParams, ...industryParams, ...deadlineParams));
-  stats.uniqueTotal = (await db.prepare(`SELECT COUNT(DISTINCT ${groupKeySql}) AS total FROM jobs WHERE review_status <> 'hidden'${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}`).get(...sourceParams, ...cityParams, ...industryParams, ...deadlineParams)).total;
+    SUM(CASE WHEN deadline <> '' AND ${dates.deadline} BETWEEN ${dates.today} AND ${dates.nextWeek} THEN 1 ELSE 0 END) AS dueSoon FROM jobs WHERE ${visibleJobSQL()}${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}`).get(...sourceParams, ...cityParams, ...industryParams, ...deadlineParams));
+  stats.uniqueTotal = (await db.prepare(`SELECT COUNT(DISTINCT ${groupKeySql}) AS total FROM jobs WHERE ${visibleJobSQL()}${sourceFilter}${cityFilter}${industryFilter}${deadlineFilter}`).get(...sourceParams, ...cityParams, ...industryParams, ...deadlineParams)).total;
   const sourceRows = (await db.prepare(`WITH names AS (
       SELECT source FROM source_status WHERE last_status <> 'never'
       UNION SELECT source FROM jobs
     ), counts AS (
-      SELECT source, COUNT(*) AS total FROM jobs WHERE review_status <> 'hidden' GROUP BY source
+      SELECT source, COUNT(*) AS total FROM jobs WHERE ${visibleJobSQL()} GROUP BY source
     )
     SELECT names.source, COALESCE(counts.total, 0) AS total,
       state.last_status AS lastStatus, state.last_finished_at AS lastFinishedAt,
       state.last_success_at AS lastSuccessfulAt, state.last_failure_at AS lastFailureAt
     FROM names LEFT JOIN counts ON counts.source=names.source
       LEFT JOIN source_status state ON state.source=names.source
-    ORDER BY names.source`).all());
+    WHERE ${availableSourceSQL("names")} ORDER BY names.source`).all());
   const sources = sourceRows.map((source) => {
     const lastSuccessfulTime = source.lastSuccessfulAt ? Date.parse(source.lastSuccessfulAt) : Number.NaN;
     return {
@@ -212,8 +213,8 @@ export async function listJobs(db, { q = "", source = "", city = "", industry = 
       isStale: !Number.isFinite(lastSuccessfulTime) || Number(now) - lastSuccessfulTime > STALE_AFTER_HOURS * 60 * 60 * 1000,
     };
   });
-  const runs = (await db.prepare("SELECT source, status, finished_at AS finishedAt, fetched_count AS fetchedCount, new_count AS newCount FROM source_runs ORDER BY id DESC LIMIT 20").all());
-  const lastSuccessfulAt = (await db.prepare("SELECT MAX(finished_at) AS finishedAt FROM source_runs WHERE status='success'").get()).finishedAt || null;
+  const runs = (await db.prepare(`SELECT source, status, finished_at AS finishedAt, fetched_count AS fetchedCount, new_count AS newCount FROM source_runs WHERE ${availableSourceSQL("source_runs")} ORDER BY id DESC LIMIT 20`).all());
+  const lastSuccessfulAt = (await db.prepare(`SELECT MAX(finished_at) AS finishedAt FROM source_runs WHERE status='success' AND ${availableSourceSQL("source_runs")}`).get()).finishedAt || null;
   const staleSources = sources.filter((source) => source.isStale).length;
   const failedSources = sources.filter((source) => source.lastStatus === "failed").length;
   const freshness = {
@@ -224,10 +225,10 @@ export async function listJobs(db, { q = "", source = "", city = "", industry = 
     isStale: !lastSuccessfulAt || staleSources > 0 || failedSources > 0,
   };
   const locationOptions = (await db.prepare(`SELECT location, COUNT(*) AS total FROM job_locations
-    INNER JOIN jobs ON jobs.id=job_locations.job_id WHERE jobs.review_status <> 'hidden'
+    INNER JOIN jobs ON jobs.id=job_locations.job_id WHERE ${visibleJobSQL()}
     GROUP BY location ORDER BY total DESC, location`).all()).map((row) => ({ location: row.location, total: row.total }));
   const industryOptions = (await db.prepare(`SELECT industry, COUNT(*) AS total FROM job_industries
-    INNER JOIN jobs ON jobs.id=job_industries.job_id WHERE jobs.review_status <> 'hidden'
+    INNER JOIN jobs ON jobs.id=job_industries.job_id WHERE ${visibleJobSQL()}
     GROUP BY industry ORDER BY CASE industry WHEN '未分类' THEN 1 ELSE 0 END, total DESC, industry`).all()).map((row) => ({ industry: row.industry, total: row.total }));
   return {
     jobs,
